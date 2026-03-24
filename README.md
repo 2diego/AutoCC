@@ -1,0 +1,1 @@
+Proyecto para automatizar el mantenimiento de cuenta corriente
