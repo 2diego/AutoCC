@@ -9,9 +9,10 @@ import { CcCurrentModule } from './cc-current/cc-current.module';
 import { CcBackupModule } from './cc-backup/cc-backup.module';
 import { ConsolidationErrorsModule } from './consolidation-errors/consolidation-errors.module';
 import { DocumentNotesAuditModule } from './document-notes-audit/document-notes-audit.module';
+import { ExportsModule } from './exports/exports.module';
 
 @Module({
-  imports: [TypeOrmModule.forRoot(databaseConfig), UsersModule, ConsolidationsModule, CcCurrentModule, CcBackupModule, ConsolidationErrorsModule, DocumentNotesAuditModule],
+  imports: [TypeOrmModule.forRoot(databaseConfig), UsersModule, ConsolidationsModule, CcCurrentModule, CcBackupModule, ConsolidationErrorsModule, DocumentNotesAuditModule, ExportsModule],
   controllers: [AppController],
   providers: [AppService],
 })
