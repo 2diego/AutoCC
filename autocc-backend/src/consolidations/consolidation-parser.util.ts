@@ -5,6 +5,8 @@ export type ParsedDocument = {
   erpSource: ErpSource;
   clienteId: string;
   tienda: string;
+  clienteNombre?: string;
+  localidad?: string;
   tipoDocumento: string;
   numeroDocumento: string;
   fechaDoc: Date | null;
@@ -40,8 +42,12 @@ const parseMoneyToDecimal = (raw?: string): string | null => {
   if (!raw) return null;
   const cleaned = raw.trim();
   if (!cleaned) return null;
-  const parsed = parseMoneyERP(cleaned);
-  return parsed.toFixed(2);
+  try {
+    const parsed = parseMoneyERP(cleaned);
+    return parsed.toFixed(2);
+  } catch {
+    return null;
+  }
 };
 
 const extractClientAndStore = (
@@ -59,6 +65,23 @@ const extractClientAndStore = (
   }
 
   return null;
+};
+
+const extractLocalidadFromSemicolon = (line: string): string => {
+  const parts = line
+    .split(';')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (parts.length === 0) return '';
+  const candidate = parts[parts.length - 1];
+  if (/^cliente/i.test(candidate)) return '';
+  return candidate;
+};
+
+const extractClientName = (line: string): string => {
+  const normalized = line.replace(/\u2013|\u2014/g, '-');
+  const nameMatch = normalized.match(/cliente[^-]*-\s*\d{1,2}\s*-\s*([^;]+)/i);
+  return nameMatch?.[1]?.trim() ?? '';
 };
 
 const extractDocTokenFromParts = (
@@ -112,6 +135,8 @@ const parseCeosBase = (content: string): ParseResult => {
   const errors: ParserError[] = [];
   let currentClient = '';
   let currentStore = '01';
+  let currentClientName = '';
+  let currentLocalidad = '';
 
   lines.forEach((line, idx) => {
     const lineNumber = idx + 1;
@@ -122,6 +147,8 @@ const parseCeosBase = (content: string): ParseResult => {
     if (clientHeader) {
       currentClient = clientHeader.clienteId;
       currentStore = clientHeader.tienda ?? '01';
+      currentClientName = extractClientName(trimmed);
+      currentLocalidad = extractLocalidadFromSemicolon(line);
       return;
     }
 
@@ -152,12 +179,19 @@ const parseCeosBase = (content: string): ParseResult => {
       erpSource: ErpSource.CEOS,
       clienteId: currentClient,
       tienda: currentStore || '01',
+      clienteNombre: currentClientName || undefined,
+      localidad: currentLocalidad || undefined,
       tipoDocumento: normalized.tipoDocumento,
       numeroDocumento: normalized.numeroDocumento,
       fechaDoc,
       valor,
       saldo,
-      rawRowJson: { sourceFile: 'BASE', raw: line },
+      rawRowJson: {
+        sourceFile: 'BASE',
+        raw: line,
+        nombreCliente: currentClientName || undefined,
+        localidad: currentLocalidad || undefined,
+      },
     });
   });
 
@@ -215,6 +249,8 @@ const parseTotvsBase = (content: string): ParseResult => {
   const errors: ParserError[] = [];
   let currentClient = '';
   let currentStore = '';
+  let currentClientName = '';
+  let currentLocalidad = '';
 
   lines.forEach((line, idx) => {
     const lineNumber = idx + 1;
@@ -225,6 +261,8 @@ const parseTotvsBase = (content: string): ParseResult => {
     if (clientHeader) {
       currentClient = clientHeader.clienteId;
       currentStore = clientHeader.tienda ?? currentStore;
+      currentClientName = extractClientName(trimmed);
+      currentLocalidad = extractLocalidadFromSemicolon(line);
       return;
     }
 
@@ -260,12 +298,19 @@ const parseTotvsBase = (content: string): ParseResult => {
       erpSource: ErpSource.TOTVS,
       clienteId: currentClient,
       tienda: currentStore,
+      clienteNombre: currentClientName || undefined,
+      localidad: currentLocalidad || undefined,
       tipoDocumento,
       numeroDocumento,
       fechaDoc,
       valor,
       saldo,
-      rawRowJson: { sourceFile: 'BASE', raw: line },
+      rawRowJson: {
+        sourceFile: 'BASE',
+        raw: line,
+        nombreCliente: currentClientName || undefined,
+        localidad: currentLocalidad || undefined,
+      },
     });
   });
 
@@ -278,6 +323,8 @@ const parseTotvsIncremental = (content: string): ParseResult => {
   const errors: ParserError[] = [];
   let currentClient = '';
   let currentStore = '';
+  let currentClientName = '';
+  let currentLocalidad = '';
 
   lines.forEach((line, idx) => {
     const lineNumber = idx + 1;
@@ -288,6 +335,8 @@ const parseTotvsIncremental = (content: string): ParseResult => {
     if (clientHeader) {
       currentClient = clientHeader.clienteId;
       currentStore = clientHeader.tienda ?? currentStore;
+      currentClientName = extractClientName(trimmed);
+      currentLocalidad = extractLocalidadFromSemicolon(line);
       return;
     }
 
@@ -313,12 +362,19 @@ const parseTotvsIncremental = (content: string): ParseResult => {
       erpSource: ErpSource.TOTVS,
       clienteId: currentClient,
       tienda: currentStore,
+      clienteNombre: currentClientName || undefined,
+      localidad: currentLocalidad || undefined,
       tipoDocumento: tipoDocumento.toUpperCase(),
       numeroDocumento: numeroDocumento.toUpperCase(),
       fechaDoc: parseDateDmy(fechaDocRaw),
       valor: parseMoneyToDecimal(valorRaw),
       saldo: parseMoneyToDecimal(saldoRaw),
-      rawRowJson: { sourceFile: 'ERP', raw: line },
+      rawRowJson: {
+        sourceFile: 'ERP',
+        raw: line,
+        nombreCliente: currentClientName || undefined,
+        localidad: currentLocalidad || undefined,
+      },
     });
   });
 

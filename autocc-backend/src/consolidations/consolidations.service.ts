@@ -13,6 +13,7 @@ import { CcBackup } from '../cc-backup/entities/cc-backup.entity';
 import { ConsolidationError } from '../consolidation-errors/entities/consolidation-error.entity';
 import {
   buildDocumentKey,
+  ParsedDocument,
   parseBaseFile,
   parseIncrementalFile,
 } from './consolidation-parser.util';
@@ -31,6 +32,17 @@ export class ConsolidationsService {
     @InjectRepository(ConsolidationError)
     private readonly consolidationErrorsRepository: Repository<ConsolidationError>,
   ) {}
+
+  private normalizeDocument(doc: ParsedDocument): ParsedDocument {
+    return {
+      ...doc,
+      clienteId: doc.clienteId.trim(),
+      tienda: doc.tienda.trim(),
+      tipoDocumento: doc.tipoDocumento.trim().toUpperCase(),
+      // Las comparaciones unicas en MySQL ignoran los espacios al final de la cadena.
+      numeroDocumento: doc.numeroDocumento.trim().toUpperCase(),
+    };
+  }
 
   create(createConsolidationDto: CreateConsolidationDto) {
     const entity = this.consolidationsRepository.create(createConsolidationDto);
@@ -83,14 +95,28 @@ export class ConsolidationsService {
 
       const baseParsed = parseBaseFile(dto.erpSource, baseContent);
       const erpParsed = parseIncrementalFile(dto.erpSource, erpContent);
+      const normalizedBaseDocs = baseParsed.documents.map((doc) =>
+        this.normalizeDocument(doc),
+      );
+      const normalizedErpDocs = erpParsed.documents.map((doc) =>
+        this.normalizeDocument(doc),
+      );
 
-      const baseMap = new Map<string, (typeof baseParsed.documents)[number]>();
-      baseParsed.documents.forEach((doc) => baseMap.set(buildDocumentKey(doc), doc));
+      const baseMap = new Map<string, (typeof normalizedBaseDocs)[number]>();
+      normalizedBaseDocs.forEach((doc) => baseMap.set(buildDocumentKey(doc), doc));
 
-      const addedDocuments = erpParsed.documents.filter(
+      const addedDocuments = normalizedErpDocs.filter(
         (doc) => !baseMap.has(buildDocumentKey(doc)),
       );
-      const finalDocuments = [...baseParsed.documents, ...addedDocuments];
+      const finalDocumentsRaw = [...normalizedBaseDocs, ...addedDocuments];
+      const finalDocumentsMap = new Map<string, (typeof finalDocumentsRaw)[number]>();
+      finalDocumentsRaw.forEach((doc) => {
+        const key = buildDocumentKey(doc);
+        if (!finalDocumentsMap.has(key)) {
+          finalDocumentsMap.set(key, doc);
+        }
+      });
+      const finalDocuments = [...finalDocumentsMap.values()];
       const allErrors = [...baseParsed.errors, ...erpParsed.errors];
 
       await this.dataSource.transaction(async (manager) => {
@@ -159,9 +185,12 @@ export class ConsolidationsService {
       });
 
       consolidation.status = ConsolidationStatus.OK;
-      consolidation.baseDocsCount = baseParsed.documents.length;
-      consolidation.erpDocsCount = erpParsed.documents.length;
-      consolidation.keptDocsCount = baseParsed.documents.length;
+      consolidation.baseDocsCount = normalizedBaseDocs.length;
+      consolidation.erpDocsCount = normalizedErpDocs.length;
+      consolidation.keptDocsCount = Math.min(
+        normalizedBaseDocs.length,
+        finalDocuments.length,
+      );
       consolidation.addedDocsCount = addedDocuments.length;
       consolidation.errorCount = allErrors.length;
       await this.consolidationsRepository.save(consolidation);
