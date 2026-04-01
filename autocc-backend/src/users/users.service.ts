@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -12,8 +13,13 @@ export class UsersService {
     private readonly usersRepository: Repository<User>,
   ) {}
 
-  create(createUserDto: CreateUserDto) {
-    const entity = this.usersRepository.create(createUserDto);
+  async create(createUserDto: CreateUserDto) {
+    const { password, ...rest } = createUserDto;
+    const passwordHash = await bcrypt.hash(password, 10);
+    const entity = this.usersRepository.create({
+      ...rest,
+      passwordHash,
+    });
     return this.usersRepository.save(entity);
   }
 
@@ -25,11 +31,30 @@ export class UsersService {
     return this.usersRepository.findOneBy({ id });
   }
 
-  update(id: number, updateUserDto: UpdateUserDto) {
-    return this.usersRepository.update(id, updateUserDto);
+  async update(id: number, updateUserDto: UpdateUserDto) {
+    const { password, ...rest } = updateUserDto as UpdateUserDto & {
+      password?: string;
+    };
+    const payload: Partial<User> = { ...rest };
+    if (password) {
+      payload.passwordHash = await bcrypt.hash(password, 10);
+    }
+    return this.usersRepository.update(id, payload);
   }
 
   remove(id: number) {
     return this.usersRepository.delete(id);
+  }
+
+  findByEmailWithPassword(email: string) {
+    return this.usersRepository
+      .createQueryBuilder('user')
+      .addSelect('user.passwordHash')
+      .where('user.email = :email', { email })
+      .getOne();
+  }
+
+  countAll() {
+    return this.usersRepository.count();
   }
 }

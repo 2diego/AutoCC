@@ -24,6 +24,9 @@ export class User {
   @Column({ unique: true })
   email: string;
 
+  @Column({ name: 'password_hash', select: false })
+  passwordHash: string;
+
   @Column({ type: 'enum', enum: UserRole, default: UserRole.OPERATOR })
   role: UserRole;
 

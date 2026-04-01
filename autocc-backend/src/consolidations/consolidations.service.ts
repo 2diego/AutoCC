@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { CreateConsolidationDto } from './dto/create-consolidation.dto';
 import { UpdateConsolidationDto } from './dto/update-consolidation.dto';
 import {
@@ -21,6 +21,7 @@ import { RunConsolidationDto } from './dto/run-consolidation.dto';
 @Injectable()
 export class ConsolidationsService {
   constructor(
+    private readonly dataSource: DataSource,
     @InjectRepository(Consolidation)
     private readonly consolidationsRepository: Repository<Consolidation>,
     @InjectRepository(CcCurrent)
@@ -83,22 +84,6 @@ export class ConsolidationsService {
       const baseParsed = parseBaseFile(dto.erpSource, baseContent);
       const erpParsed = parseIncrementalFile(dto.erpSource, erpContent);
 
-      const allErrors = [...baseParsed.errors, ...erpParsed.errors];
-      if (allErrors.length > 0) {
-        await this.consolidationErrorsRepository.save(
-          allErrors.map((err) =>
-            this.consolidationErrorsRepository.create({
-              consolidation,
-              sourceFile: err.sourceFile,
-              lineNumber: err.lineNumber,
-              rawLine: err.rawLine,
-              errorCode: err.errorCode,
-              message: err.message,
-            }),
-          ),
-        );
-      }
-
       const baseMap = new Map<string, (typeof baseParsed.documents)[number]>();
       baseParsed.documents.forEach((doc) => baseMap.set(buildDocumentKey(doc), doc));
 
@@ -106,50 +91,72 @@ export class ConsolidationsService {
         (doc) => !baseMap.has(buildDocumentKey(doc)),
       );
       const finalDocuments = [...baseParsed.documents, ...addedDocuments];
+      const allErrors = [...baseParsed.errors, ...erpParsed.errors];
 
-      const previousCurrent = await this.ccCurrentRepository.find({
-        where: { erpSource: dto.erpSource },
-      });
+      await this.dataSource.transaction(async (manager) => {
+        const ccCurrentRepo = manager.getRepository(CcCurrent);
+        const ccBackupRepo = manager.getRepository(CcBackup);
+        const errorsRepo = manager.getRepository(ConsolidationError);
 
-      if (previousCurrent.length > 0) {
-        await this.ccBackupRepository.save(
-          previousCurrent.map((row) =>
-            this.ccBackupRepository.create({
-              erpSource: row.erpSource,
-              clienteId: row.clienteId,
-              tienda: row.tienda,
-              tipoDocumento: row.tipoDocumento,
-              numeroDocumento: row.numeroDocumento,
-              fechaDoc: row.fechaDoc,
-              valor: row.valor,
-              saldo: row.saldo,
-              rawRowJson: row.rawRowJson,
-              observaciones: row.observaciones,
-              motivoDeuda: row.motivoDeuda,
-              backupFromConsolidation: consolidation,
+        if (allErrors.length > 0) {
+          await errorsRepo.save(
+            allErrors.map((err) =>
+              errorsRepo.create({
+                consolidation,
+                sourceFile: err.sourceFile,
+                lineNumber: err.lineNumber,
+                rawLine: err.rawLine,
+                errorCode: err.errorCode,
+                message: err.message,
+              }),
+            ),
+          );
+        }
+
+        const previousCurrent = await ccCurrentRepo.find({
+          where: { erpSource: dto.erpSource },
+        });
+
+        if (previousCurrent.length > 0) {
+          await ccBackupRepo.save(
+            previousCurrent.map((row) =>
+              ccBackupRepo.create({
+                erpSource: row.erpSource,
+                clienteId: row.clienteId,
+                tienda: row.tienda,
+                tipoDocumento: row.tipoDocumento,
+                numeroDocumento: row.numeroDocumento,
+                fechaDoc: row.fechaDoc,
+                valor: row.valor,
+                saldo: row.saldo,
+                rawRowJson: row.rawRowJson,
+                observaciones: row.observaciones,
+                motivoDeuda: row.motivoDeuda,
+                backupFromConsolidation: consolidation,
+              }),
+            ),
+          );
+        }
+
+        await ccCurrentRepo.delete({ erpSource: dto.erpSource });
+
+        await ccCurrentRepo.save(
+          finalDocuments.map((doc) =>
+            ccCurrentRepo.create({
+              erpSource: doc.erpSource,
+              clienteId: doc.clienteId,
+              tienda: doc.tienda,
+              tipoDocumento: doc.tipoDocumento,
+              numeroDocumento: doc.numeroDocumento,
+              fechaDoc: doc.fechaDoc,
+              valor: doc.valor,
+              saldo: doc.saldo,
+              rawRowJson: doc.rawRowJson,
+              lastConsolidation: consolidation,
             }),
           ),
         );
-      }
-
-      await this.ccCurrentRepository.delete({ erpSource: dto.erpSource });
-
-      await this.ccCurrentRepository.save(
-        finalDocuments.map((doc) =>
-          this.ccCurrentRepository.create({
-            erpSource: doc.erpSource,
-            clienteId: doc.clienteId,
-            tienda: doc.tienda,
-            tipoDocumento: doc.tipoDocumento,
-            numeroDocumento: doc.numeroDocumento,
-            fechaDoc: doc.fechaDoc,
-            valor: doc.valor,
-            saldo: doc.saldo,
-            rawRowJson: doc.rawRowJson,
-            lastConsolidation: consolidation,
-          }),
-        ),
-      );
+      });
 
       consolidation.status = ConsolidationStatus.OK;
       consolidation.baseDocsCount = baseParsed.documents.length;
@@ -176,6 +183,20 @@ export class ConsolidationsService {
           tipoDocumento: doc.tipoDocumento,
           numeroDocumento: doc.numeroDocumento,
         })),
+        previewCurrent: finalDocuments.slice(0, 20).map((doc) => ({
+          clienteId: doc.clienteId,
+          tienda: doc.tienda,
+          tipoDocumento: doc.tipoDocumento,
+          numeroDocumento: doc.numeroDocumento,
+          saldo: doc.saldo,
+          observaciones: null,
+        })),
+        previewErrors: allErrors.slice(0, 20).map((err) => ({
+          sourceFile: err.sourceFile,
+          lineNumber: err.lineNumber,
+          errorCode: err.errorCode,
+          message: err.message,
+        })),
       };
     } catch (error) {
       consolidation.status = ConsolidationStatus.FAILED;
@@ -183,5 +204,14 @@ export class ConsolidationsService {
       await this.consolidationsRepository.save(consolidation);
       throw error;
     }
+  }
+
+  async findErrorsByConsolidation(id: number) {
+    await this.getByIdOrThrow(id);
+    return this.consolidationErrorsRepository.find({
+      where: { consolidation: { id } },
+      order: { lineNumber: 'ASC' },
+      take: 500,
+    });
   }
 }

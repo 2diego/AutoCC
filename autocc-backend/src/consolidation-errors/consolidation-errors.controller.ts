@@ -1,25 +1,17 @@
 import {
   Controller,
   Get,
-  Post,
-  Body,
-  Patch,
   Param,
-  Delete,
   ParseIntPipe,
 } from '@nestjs/common';
 import { ConsolidationErrorsService } from './consolidation-errors.service';
-import { CreateConsolidationErrorDto } from './dto/create-consolidation-error.dto';
-import { UpdateConsolidationErrorDto } from './dto/update-consolidation-error.dto';
+import { Roles } from '../common/auth/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
 
 @Controller('consolidation-errors')
+@Roles(UserRole.ADMIN)
 export class ConsolidationErrorsController {
   constructor(private readonly consolidationErrorsService: ConsolidationErrorsService) {}
-
-  @Post()
-  create(@Body() createConsolidationErrorDto: CreateConsolidationErrorDto) {
-    return this.consolidationErrorsService.create(createConsolidationErrorDto);
-  }
 
   @Get()
   findAll() {
@@ -29,18 +21,5 @@ export class ConsolidationErrorsController {
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.consolidationErrorsService.findOne(id);
-  }
-
-  @Patch(':id')
-  update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateConsolidationErrorDto: UpdateConsolidationErrorDto,
-  ) {
-    return this.consolidationErrorsService.update(id, updateConsolidationErrorDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.consolidationErrorsService.remove(id);
   }
 }

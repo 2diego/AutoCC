@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ErpSource } from '../consolidations/entities/consolidation.entity';
+import { Roles } from '../common/auth/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
 import { ExportsService } from './exports.service';
 
 @Controller('exports')
@@ -15,6 +17,7 @@ export class ExportsController {
   constructor(private readonly exportsService: ExportsService) {}
 
   @Get(':erpSource/current.xlsx')
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR)
   @Header(
     'Content-Type',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

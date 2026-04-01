@@ -44,9 +44,39 @@ const parseMoneyToDecimal = (raw?: string): string | null => {
   return parsed.toFixed(2);
 };
 
+const extractClientAndStore = (
+  line: string,
+): { clienteId: string; tienda: string | null } | null => {
+  const normalized = line.replace(/\u2013|\u2014/g, '-');
+  const match = normalized.match(/cliente[^0-9]*(\d{2,})\s*-\s*(\d{1,2})/i);
+  if (match) {
+    return { clienteId: match[1], tienda: match[2] };
+  }
+
+  const clientOnly = normalized.match(/cliente[^0-9]*(\d{2,})/i);
+  if (clientOnly) {
+    return { clienteId: clientOnly[1], tienda: null };
+  }
+
+  return null;
+};
+
+const extractDocTokenFromParts = (
+  parts: string[],
+  normalizer: (value: string) => unknown | null,
+): string | null => {
+  const candidates = [parts[1], parts[0], parts[2]]
+    .map((value) => (value ?? '').trim())
+    .filter((value) => value.length > 0);
+  const token = candidates.find((value) => normalizer(value));
+  return token ?? null;
+};
+
 const buildTotvsTypeFromToken = (token: string): string => {
   const t = token.trim().toUpperCase();
   if (t.startsWith('REC')) return 'RA';
+  if (t.startsWith('YD1')) return 'NCE';
+  if (t.startsWith('D ')) return 'NCE';
   if (t.startsWith('NCE')) return 'NCE';
   if (t.startsWith('NCC')) return 'NCC';
   if (t.startsWith('RA')) return 'RA';
@@ -54,6 +84,8 @@ const buildTotvsTypeFromToken = (token: string): string => {
 };
 
 const normalizeTotvsDocumentNumber = (token: string): string => token.trim();
+const isLikelyTotvsDocToken = (token: string): boolean =>
+  /^(REC\.?|RA|NF|NCE|NCC|YD1|[A-Z]\d{2}-|D\s+\d)/i.test(token.trim());
 
 const normalizeCeosDocument = (
   token: string,
@@ -86,16 +118,16 @@ const parseCeosBase = (content: string): ParseResult => {
     const trimmed = line.trim();
     if (!trimmed) return;
 
-    const clientHeader = trimmed.match(/Cliente\s*:?\s*(\d+)\s*-\s*(\d+)/i);
+    const clientHeader = extractClientAndStore(trimmed);
     if (clientHeader) {
-      currentClient = clientHeader[1];
-      currentStore = clientHeader[2];
+      currentClient = clientHeader.clienteId;
+      currentStore = clientHeader.tienda ?? '01';
       return;
     }
 
-    if (!trimmed.startsWith(';')) return;
+    if (!line.includes(';')) return;
     const parts = line.split(';');
-    const docToken = (parts[1] ?? '').trim();
+    const docToken = extractDocTokenFromParts(parts, normalizeCeosDocument);
     if (!docToken) return;
 
     const normalized = normalizeCeosDocument(docToken);
@@ -189,16 +221,18 @@ const parseTotvsBase = (content: string): ParseResult => {
     const trimmed = line.trim();
     if (!trimmed) return;
 
-    const clientHeader = trimmed.match(/Cliente\s*:?\s*(\d+)\s*-\s*(\d+)/i);
+    const clientHeader = extractClientAndStore(trimmed);
     if (clientHeader) {
-      currentClient = clientHeader[1];
-      currentStore = clientHeader[2];
+      currentClient = clientHeader.clienteId;
+      currentStore = clientHeader.tienda ?? currentStore;
       return;
     }
 
-    if (!trimmed.startsWith(';')) return;
+    if (!line.includes(';')) return;
     const parts = line.split(';');
-    const token = (parts[1] ?? '').trim();
+    const token = extractDocTokenFromParts(parts, (candidate) =>
+      isLikelyTotvsDocToken(candidate) ? candidate : null,
+    );
     if (!token) return;
 
     if (!currentClient || !currentStore) {
@@ -250,10 +284,10 @@ const parseTotvsIncremental = (content: string): ParseResult => {
     const trimmed = line.replace(/^"+|"+$/g, '').trim();
     if (!trimmed) return;
 
-    const clientHeader = trimmed.match(/Cliente\s*:?\s*(\d+)\s*-\s*(\d+)/i);
+    const clientHeader = extractClientAndStore(trimmed);
     if (clientHeader) {
-      currentClient = clientHeader[1];
-      currentStore = clientHeader[2];
+      currentClient = clientHeader.clienteId;
+      currentStore = clientHeader.tienda ?? currentStore;
       return;
     }
 

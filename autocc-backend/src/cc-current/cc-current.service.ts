@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateCcCurrentDto } from './dto/create-cc-current.dto';
@@ -33,11 +33,22 @@ export class CcCurrentService {
     clienteId?: string,
     tipoDocumento?: string,
     q?: string,
+    limit?: number,
+    offset?: number,
   ) {
+    const safeLimit = Number.isFinite(limit)
+      ? Math.min(Math.max(Number(limit), 1), 500)
+      : 100;
+    const safeOffset = Number.isFinite(offset)
+      ? Math.max(Number(offset), 0)
+      : 0;
+
     const qb = this.ccCurrentRepository
       .createQueryBuilder('cc')
       .where('cc.erpSource = :erpSource', { erpSource })
-      .orderBy('cc.id', 'DESC');
+      .orderBy('cc.id', 'DESC')
+      .take(safeLimit)
+      .skip(safeOffset);
 
     if (clienteId) {
       qb.andWhere('cc.clienteId = :clienteId', { clienteId });
@@ -121,6 +132,11 @@ export class CcCurrentService {
       changedByUser =
         (await this.usersRepository.findOneBy({ id: updateDto.changedByUserId })) ??
         null;
+      if (!changedByUser) {
+        throw new BadRequestException(
+          `changedByUserId ${updateDto.changedByUserId} no existe`,
+        );
+      }
     }
 
     await this.notesAuditRepository.save(

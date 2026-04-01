@@ -1,25 +1,17 @@
 import {
   Controller,
   Get,
-  Post,
-  Body,
-  Patch,
   Param,
-  Delete,
   ParseIntPipe,
 } from '@nestjs/common';
 import { CcBackupService } from './cc-backup.service';
-import { CreateCcBackupDto } from './dto/create-cc-backup.dto';
-import { UpdateCcBackupDto } from './dto/update-cc-backup.dto';
+import { Roles } from '../common/auth/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
 
 @Controller('cc-backup')
+@Roles(UserRole.ADMIN)
 export class CcBackupController {
   constructor(private readonly ccBackupService: CcBackupService) {}
-
-  @Post()
-  create(@Body() createCcBackupDto: CreateCcBackupDto) {
-    return this.ccBackupService.create(createCcBackupDto);
-  }
 
   @Get()
   findAll() {
@@ -29,18 +21,5 @@ export class CcBackupController {
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.ccBackupService.findOne(id);
-  }
-
-  @Patch(':id')
-  update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateCcBackupDto: UpdateCcBackupDto,
-  ) {
-    return this.ccBackupService.update(id, updateCcBackupDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.ccBackupService.remove(id);
   }
 }
