@@ -31,6 +31,7 @@ export class CcCurrent {
   @Column({ length: 64 })
   numeroDocumento: string;
 
+  /** Vencimiento / fecha documento. Atraso en días para lógica API/bots: calcular desde aca + tipo (p. ej. excluir recibos), no desde celdas de export Excel. */
   @Column({ type: 'date', nullable: true })
   fechaDoc: Date | null;
 

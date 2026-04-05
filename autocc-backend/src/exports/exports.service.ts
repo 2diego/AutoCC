@@ -3,12 +3,20 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Workbook } from 'exceljs';
 import { Repository } from 'typeorm';
 import { CcCurrent } from '../cc-current/entities/cc-current.entity';
+import {
+  Consolidation,
+  ConsolidationStatus,
+  ErpSource,
+} from '../consolidations/entities/consolidation.entity';
+import { buildReplayWorkbook } from './base-export-replay.util';
 
 @Injectable()
 export class ExportsService {
   constructor(
     @InjectRepository(CcCurrent)
     private readonly ccCurrentRepository: Repository<CcCurrent>,
+    @InjectRepository(Consolidation)
+    private readonly consolidationsRepository: Repository<Consolidation>,
   ) {}
 
   private formatDate(date: Date | null): string {
@@ -92,6 +100,21 @@ export class ExportsService {
         numeroDocumento: 'ASC',
       },
     });
+
+    const latestBase = await this.consolidationsRepository.findOne({
+      where: {
+        erpSource: erpSource as ErpSource,
+        status: ConsolidationStatus.OK,
+      },
+      order: { id: 'DESC' },
+    });
+    if (latestBase?.baseFileText && latestBase.baseFileText.length > 0) {
+      return buildReplayWorkbook(
+        erpSource as ErpSource,
+        latestBase.baseFileText,
+        rows,
+      );
+    }
 
     const workbook = new Workbook();
     const ws = workbook.addWorksheet(`${erpSource}_CURRENT`);

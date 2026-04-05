@@ -44,6 +44,25 @@ export class ConsolidationsService {
     };
   }
 
+  /**
+   * Importe (valor) y saldo: si el archivo solo trae uno (típico base solo “saldo”),
+   * replica en el otro hasta tener lógica de pagos parciales. Así el Excel puede
+   * mostrar Importe y Saldo coherentes.
+   */
+  private normalizeDocumentAmounts(doc: ParsedDocument): ParsedDocument {
+    let { valor, saldo } = doc;
+    const vMissing = valor == null || String(valor).trim() === '';
+    const sMissing = saldo == null || String(saldo).trim() === '';
+
+    if (vMissing && !sMissing) {
+      valor = saldo;
+    } else if (!vMissing && sMissing) {
+      saldo = valor;
+    }
+
+    return { ...doc, valor, saldo };
+  }
+
   create(createConsolidationDto: CreateConsolidationDto) {
     const entity = this.consolidationsRepository.create(createConsolidationDto);
     return this.consolidationsRepository.save(entity);
@@ -96,10 +115,10 @@ export class ConsolidationsService {
       const baseParsed = parseBaseFile(dto.erpSource, baseContent);
       const erpParsed = parseIncrementalFile(dto.erpSource, erpContent);
       const normalizedBaseDocs = baseParsed.documents.map((doc) =>
-        this.normalizeDocument(doc),
+        this.normalizeDocumentAmounts(this.normalizeDocument(doc)),
       );
       const normalizedErpDocs = erpParsed.documents.map((doc) =>
-        this.normalizeDocument(doc),
+        this.normalizeDocumentAmounts(this.normalizeDocument(doc)),
       );
 
       const baseMap = new Map<string, (typeof normalizedBaseDocs)[number]>();
@@ -185,6 +204,7 @@ export class ConsolidationsService {
       });
 
       consolidation.status = ConsolidationStatus.OK;
+      consolidation.baseFileText = baseContent;
       consolidation.baseDocsCount = normalizedBaseDocs.length;
       consolidation.erpDocsCount = normalizedErpDocs.length;
       consolidation.keptDocsCount = Math.min(

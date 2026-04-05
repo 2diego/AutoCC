@@ -50,7 +50,7 @@ const parseMoneyToDecimal = (raw?: string): string | null => {
   }
 };
 
-const extractClientAndStore = (
+export const extractClientAndStore = (
   line: string,
 ): { clienteId: string; tienda: string | null } | null => {
   const normalized = line.replace(/\u2013|\u2014/g, '-');
@@ -198,6 +198,28 @@ const parseCeosBase = (content: string): ParseResult => {
   return { documents, errors };
 };
 
+/** Heurística para listados CEOS ERP (columnas separadas por espacios múltiples). */
+const extractCeosErpLineMeta = (
+  trimmed: string,
+): { nombreCliente?: string; localidad?: string } => {
+  const idMatch = trimmed.match(/^(\d+)\s+/);
+  if (!idMatch) return {};
+  const afterId = trimmed.slice(idMatch[0].length);
+  const firstDateIdx = afterId.search(/\d{2}\/\d{2}\/\d{4}/);
+  const preamble =
+    firstDateIdx >= 0 ? afterId.slice(0, firstDateIdx).trim() : afterId.trim();
+  if (!preamble) return {};
+  const chunks = preamble
+    .split(/\s{2,}/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (chunks.length === 0) return {};
+  const nombreCliente = chunks[0];
+  const localidad =
+    chunks.length >= 3 ? chunks[2] : chunks.length === 2 ? chunks[1] : undefined;
+  return { nombreCliente, localidad };
+};
+
 const parseCeosIncremental = (content: string): ParseResult => {
   const lines = content.split(/\r?\n/);
   const documents: ParsedDocument[] = [];
@@ -227,6 +249,8 @@ const parseCeosIncremental = (content: string): ParseResult => {
 
     const [, fechaDocRaw, , tipoDocumento, numeroDocumento, saldoRaw] = tailMatch;
 
+    const ceosErpMeta = extractCeosErpLineMeta(trimmed);
+
     documents.push({
       erpSource: ErpSource.CEOS,
       clienteId: clientMatch[1],
@@ -236,7 +260,14 @@ const parseCeosIncremental = (content: string): ParseResult => {
       fechaDoc: parseDateDmy(fechaDocRaw),
       valor: parseMoneyToDecimal(saldoRaw),
       saldo: parseMoneyToDecimal(saldoRaw),
-      rawRowJson: { sourceFile: 'ERP', raw: line },
+      clienteNombre: ceosErpMeta.nombreCliente,
+      localidad: ceosErpMeta.localidad,
+      rawRowJson: {
+        sourceFile: 'ERP',
+        raw: line,
+        nombreCliente: ceosErpMeta.nombreCliente,
+        localidad: ceosErpMeta.localidad,
+      },
     });
   });
 
@@ -358,6 +389,9 @@ const parseTotvsIncremental = (content: string): ParseResult => {
 
     const [, tipoDocumento, numeroDocumento, fechaDocRaw, valorRaw, saldoRaw] = docMatch;
 
+    const diasAtrasoMatch = trimmed.match(/\s(-?\d{1,4})\s*$/);
+    const diasAtraso = diasAtrasoMatch?.[1];
+
     documents.push({
       erpSource: ErpSource.TOTVS,
       clienteId: currentClient,
@@ -374,6 +408,7 @@ const parseTotvsIncremental = (content: string): ParseResult => {
         raw: line,
         nombreCliente: currentClientName || undefined,
         localidad: currentLocalidad || undefined,
+        ...(diasAtraso !== undefined ? { diasAtraso } : {}),
       },
     });
   });
@@ -381,8 +416,142 @@ const parseTotvsIncremental = (content: string): ParseResult => {
   return { documents, errors };
 };
 
+export const buildDocumentKeyFromParts = (
+  erpSource: ErpSource,
+  clienteId: string,
+  tienda: string,
+  tipoDocumento: string,
+  numeroDocumento: string,
+): string =>
+  `${erpSource}|${clienteId}|${tienda}|${tipoDocumento}|${numeroDocumento}`;
+
 export const buildDocumentKey = (doc: ParsedDocument): string =>
-  `${doc.erpSource}|${doc.clienteId}|${doc.tienda}|${doc.tipoDocumento}|${doc.numeroDocumento}`;
+  buildDocumentKeyFromParts(
+    doc.erpSource,
+    doc.clienteId,
+    doc.tienda,
+    doc.tipoDocumento,
+    doc.numeroDocumento,
+  );
+
+export type CeosReplayState = { currentClient: string; currentStore: string };
+
+export type TotvsReplayState = { currentClient: string; currentStore: string };
+
+export type CeosBaseStepResult =
+  | { kind: 'empty'; next: CeosReplayState }
+  | { kind: 'header'; clientKey: string; next: CeosReplayState }
+  | { kind: 'doc'; docKey: string; next: CeosReplayState }
+  | { kind: 'other'; next: CeosReplayState };
+
+export type TotvsBaseStepResult =
+  | { kind: 'empty'; next: TotvsReplayState }
+  | { kind: 'header'; clientKey: string; next: TotvsReplayState }
+  | { kind: 'doc'; docKey: string; next: TotvsReplayState }
+  | { kind: 'other'; next: TotvsReplayState };
+
+export const initialCeosReplayState = (): CeosReplayState => ({
+  currentClient: '',
+  currentStore: '01',
+});
+
+export const initialTotvsReplayState = (): TotvsReplayState => ({
+  currentClient: '',
+  currentStore: '',
+});
+
+export function stepCeosBaseLine(
+  line: string,
+  state: CeosReplayState,
+): CeosBaseStepResult {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return { kind: 'empty', next: { ...state } };
+  }
+  const clientHeader = extractClientAndStore(trimmed);
+  if (clientHeader) {
+    const next: CeosReplayState = {
+      currentClient: clientHeader.clienteId,
+      currentStore: clientHeader.tienda ?? '01',
+    };
+    return {
+      kind: 'header',
+      clientKey: `${next.currentClient}|${next.currentStore}`,
+      next,
+    };
+  }
+  if (!line.includes(';')) {
+    return { kind: 'other', next: { ...state } };
+  }
+  const parts = line.split(';');
+  const docToken = extractDocTokenFromParts(parts, normalizeCeosDocument);
+  if (!docToken) {
+    return { kind: 'other', next: { ...state } };
+  }
+  const normalized = normalizeCeosDocument(docToken);
+  if (!normalized || !normalized.numeroDocumento) {
+    return { kind: 'other', next: { ...state } };
+  }
+  if (!state.currentClient) {
+    return { kind: 'other', next: { ...state } };
+  }
+  const docKey = buildDocumentKeyFromParts(
+    ErpSource.CEOS,
+    state.currentClient,
+    state.currentStore,
+    normalized.tipoDocumento,
+    normalized.numeroDocumento,
+  );
+  return { kind: 'doc', docKey, next: { ...state } };
+}
+
+export function stepTotvsBaseLine(
+  line: string,
+  state: TotvsReplayState,
+): TotvsBaseStepResult {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return { kind: 'empty', next: { ...state } };
+  }
+  const clientHeader = extractClientAndStore(trimmed);
+  if (clientHeader) {
+    const next: TotvsReplayState = {
+      currentClient: clientHeader.clienteId,
+      currentStore: clientHeader.tienda ?? state.currentStore,
+    };
+    return {
+      kind: 'header',
+      clientKey: `${next.currentClient}|${next.currentStore}`,
+      next,
+    };
+  }
+  if (!line.includes(';')) {
+    return { kind: 'other', next: { ...state } };
+  }
+  const parts = line.split(';');
+  const token = extractDocTokenFromParts(parts, (candidate) =>
+    isLikelyTotvsDocToken(candidate) ? candidate : null,
+  );
+  if (!token) {
+    return { kind: 'other', next: { ...state } };
+  }
+  if (!state.currentClient || !state.currentStore) {
+    return { kind: 'other', next: { ...state } };
+  }
+  const tipoDocumento = buildTotvsTypeFromToken(token);
+  const numeroDocumento =
+    tipoDocumento === 'RA'
+      ? token.replace(/^REC[.\s-]*/i, '').trim()
+      : normalizeTotvsDocumentNumber(token);
+  const docKey = buildDocumentKeyFromParts(
+    ErpSource.TOTVS,
+    state.currentClient,
+    state.currentStore,
+    tipoDocumento,
+    numeroDocumento,
+  );
+  return { kind: 'doc', docKey, next: { ...state } };
+}
 
 export const parseBaseFile = (
   erpSource: ErpSource,

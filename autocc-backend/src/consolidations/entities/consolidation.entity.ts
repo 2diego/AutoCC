@@ -55,6 +55,10 @@ export class Consolidation {
   @Column({ type: 'int', default: 0 })
   errorCount: number;
 
+  /** Texto UTF-8 del archivo base usado en la última consolidación OK (para export fiel al layout). */
+  @Column({ type: 'longtext', nullable: true })
+  baseFileText: string | null;
+
   @OneToMany(() => CcCurrent, (ccCurrent) => ccCurrent.lastConsolidation)
   currentRows: CcCurrent[];
 
