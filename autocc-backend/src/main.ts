@@ -10,7 +10,10 @@ async function bootstrap() {
     origin:
       appConfig.corsOrigin.length === 0
         ? false
-        : (origin, callback) => {
+        : (
+            origin: string | undefined,
+            callback: (err: Error | null, allow?: boolean) => void,
+          ) => {
             if (!origin || appConfig.corsOrigin.includes(origin)) {
               callback(null, true);
               return;
@@ -30,7 +33,9 @@ async function bootstrap() {
   await app.listen(appConfig.port);
   logger.log(`API listening on port ${appConfig.port}`);
 }
-bootstrap().catch((error) => {
-  console.error('Error al iniciar la aplicación:', error);
+bootstrap().catch((error: unknown) => {
+  const msg =
+    error instanceof Error ? (error.stack ?? error.message) : String(error);
+  Logger.error(`Error al iniciar la aplicación: ${msg}`);
   process.exit(1);
 });

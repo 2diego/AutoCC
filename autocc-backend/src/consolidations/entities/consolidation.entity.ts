@@ -37,7 +37,11 @@ export class Consolidation {
   @CreateDateColumn()
   createdAt: Date;
 
-  @Column({ type: 'enum', enum: ConsolidationStatus, default: ConsolidationStatus.PROCESSING })
+  @Column({
+    type: 'enum',
+    enum: ConsolidationStatus,
+    default: ConsolidationStatus.PROCESSING,
+  })
   status: ConsolidationStatus;
 
   @Column({ type: 'int', default: 0 })

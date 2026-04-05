@@ -7,7 +7,12 @@ import {
 import { ErpSource } from './entities/consolidation.entity';
 
 const readFixture = (fileName: string): string => {
-  const filePath = path.resolve(process.cwd(), '..', 'EjemplosArchivosERP', fileName);
+  const filePath = path.resolve(
+    process.cwd(),
+    '..',
+    'EjemplosArchivosERP',
+    fileName,
+  );
   return fs.readFileSync(filePath, 'utf-8');
 };
 

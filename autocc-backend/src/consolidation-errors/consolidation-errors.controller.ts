@@ -1,9 +1,4 @@
-import {
-  Controller,
-  Get,
-  Param,
-  ParseIntPipe,
-} from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
 import { ConsolidationErrorsService } from './consolidation-errors.service';
 import { Roles } from '../common/auth/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
@@ -11,7 +6,9 @@ import { UserRole } from '../users/entities/user.entity';
 @Controller('consolidation-errors')
 @Roles(UserRole.ADMIN)
 export class ConsolidationErrorsController {
-  constructor(private readonly consolidationErrorsService: ConsolidationErrorsService) {}
+  constructor(
+    private readonly consolidationErrorsService: ConsolidationErrorsService,
+  ) {}
 
   @Get()
   findAll() {

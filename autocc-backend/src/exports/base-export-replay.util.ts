@@ -1,4 +1,5 @@
 import { Workbook } from 'exceljs';
+import { formatFechaDocUtcDmy } from '../common/utils/format-fecha-doc-utc-dmy.util';
 import { CcCurrent } from '../cc-current/entities/cc-current.entity';
 import { ErpSource } from '../consolidations/entities/consolidation.entity';
 import {
@@ -22,7 +23,7 @@ import {
   type TotvsBaseStepResult,
 } from '../consolidations/consolidation-parser.util';
 
-export const buildCcRowDocKey = (row: CcCurrent): string =>
+const buildCcRowDocKey = (row: CcCurrent): string =>
   buildDocumentKeyFromParts(
     row.erpSource as ErpSource,
     row.clienteId,
@@ -41,7 +42,7 @@ function isBlankOrSeparatorLine(line: string): boolean {
   return /^[\s;]+$/.test(t);
 }
 
-export function appendObservacionesColumn(
+function appendObservacionesColumn(
   rawLine: string,
   observaciones: string | null,
 ): string[] {
@@ -81,23 +82,13 @@ function getSortLabelForClient(rows: CcCurrent[]): string {
 function buildSyntheticClientHeaderLine(rows: CcCurrent[]): string {
   const first = rows[0];
   const raw = first.rawRowJson ?? {};
-  const nombre = String(
-    raw['nombreCliente'] ?? raw['clienteNombre'] ?? '',
+  const nombre = (
+    (raw['nombreCliente'] as string | undefined) ??
+    (raw['clienteNombre'] as string | undefined) ??
+    ''
   ).trim();
-  const loc = String(raw['localidad'] ?? '').trim();
+  const loc = ((raw['localidad'] as string | undefined) ?? '').trim();
   return `Cliente :${first.clienteId} - ${first.tienda} - ${nombre};;;${loc}`;
-}
-
-/** Misma convención UTC que el export legacy (fechas guardadas como date-only). */
-function formatDateDmy(fechaDoc: CcCurrent['fechaDoc']): string {
-  if (fechaDoc == null) return '';
-  const d =
-    fechaDoc instanceof Date ? fechaDoc : new Date(fechaDoc as string);
-  if (Number.isNaN(d.getTime())) return '';
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const yyyy = d.getUTCFullYear();
-  return `${dd}/${mm}/${yyyy}`;
 }
 
 /**
@@ -109,7 +100,7 @@ function isCsvBaseLikeDocLine(stripped: string): boolean {
   const parts = stripped.split(';');
   if (parts.length < 4) return false;
   const nonEmpty = parts.filter((p) => p.trim().length > 0);
-  if (nonEmpty.length === 1 && nonEmpty[0]!.length > 60) {
+  if (nonEmpty.length === 1 && nonEmpty[0].length > 60) {
     return false;
   }
   return true;
@@ -122,15 +113,13 @@ function isCsvBaseLikeDocLine(stripped: string): boolean {
  */
 function formatCeosCcRowAsBaseCsvLine(row: CcCurrent): string {
   const comprobante = `${row.tipoDocumento} ${row.numeroDocumento}`.trim();
-  const fecha = formatDateDmy(row.fechaDoc);
+  const fecha = formatFechaDocUtcDmy(row.fechaDoc);
   const v = row.valor;
   const s = row.saldo;
   const hasV = v != null && String(v).trim() !== '';
   const hasS = s != null && String(s).trim() !== '';
-  const valorFmt =
-    hasV || hasS ? formatMoneyArDisplay(hasV ? v : s) : '';
-  const saldoFmt =
-    hasS || hasV ? formatMoneyArDisplay(hasS ? s : v) : '';
+  const valorFmt = hasV || hasS ? formatMoneyArDisplay(hasV ? v : s) : '';
+  const saldoFmt = hasS || hasV ? formatMoneyArDisplay(hasS ? s : v) : '';
   return `;${comprobante};${fecha};${valorFmt};${saldoFmt};;;;;;;;;`;
 }
 
@@ -152,7 +141,7 @@ function extractTotvsDiasAtrasoFromRaw(raw: unknown): string {
  * Columna extra `parts[5]`: días de atraso del ERP (el parser no la lee).
  */
 function formatTotvsCcRowAsBaseCsvLine(row: CcCurrent): string {
-  const fecha = formatDateDmy(row.fechaDoc);
+  const fecha = formatFechaDocUtcDmy(row.fechaDoc);
   const token =
     row.tipoDocumento === 'RA'
       ? `REC-${row.numeroDocumento}`.replace(/^REC-REC-/, 'REC-')
@@ -169,17 +158,13 @@ function formatTotvsCcRowAsBaseCsvLine(row: CcCurrent): string {
   const hasV = v != null && String(v).trim() !== '';
   const hasS = s != null && String(s).trim() !== '';
 
-  const importeFmt =
-    hasV || hasS ? formatMoneyArDisplay(hasV ? v : s) : '';
-  const saldoFmt =
-    hasS || hasV ? formatMoneyArDisplay(hasS ? s : v) : '';
+  const importeFmt = hasV || hasS ? formatMoneyArDisplay(hasV ? v : s) : '';
+  const saldoFmt = hasS || hasV ? formatMoneyArDisplay(hasS ? s : v) : '';
 
   /** En recibos RA el número final suele ser otro concepto; no mezclar con atraso NF. */
   const esRecibo = row.tipoDocumento === 'RA';
   const atrasoFmt =
-    !esRecibo &&
-    diasStr !== '' &&
-    looksLikeDiasAtrasoTotvs(diasStr)
+    !esRecibo && diasStr !== '' && looksLikeDiasAtrasoTotvs(diasStr)
       ? diasStr.trim()
       : '';
 
@@ -210,9 +195,7 @@ function formatDocLineForExport(row: CcCurrent): string {
 }
 
 /** TypeORM/MySQL puede hidratar `date` como string; no asumir instancia de Date. */
-function fechaDocToMs(
-  fechaDoc: CcCurrent['fechaDoc'],
-): number {
+function fechaDocToMs(fechaDoc: CcCurrent['fechaDoc']): number {
   if (fechaDoc == null) return 0;
   if (fechaDoc instanceof Date) {
     const t = fechaDoc.getTime();
@@ -276,7 +259,7 @@ export async function buildReplayWorkbook(
     const injKeys = missing.map((r) => buildCcRowDocKey(r));
 
     if (segmentAnchorIndex === null) {
-      injections.forEach((row, i) => pushDataRow(row, injKeys[i]!));
+      injections.forEach((row, i) => pushDataRow(row, injKeys[i]));
       pushDataRow([], null);
       return;
     }
@@ -285,9 +268,9 @@ export async function buildReplayWorkbook(
     const tailKeys = docRowKeys.slice(segmentAnchorIndex + 1);
     dataRows.length = segmentAnchorIndex + 1;
     docRowKeys.length = segmentAnchorIndex + 1;
-    injections.forEach((row, i) => pushDataRow(row, injKeys[i]!));
+    injections.forEach((row, i) => pushDataRow(row, injKeys[i]));
     pushDataRow([], null);
-    tail.forEach((row, i) => pushDataRow(row, tailKeys[i]!));
+    tail.forEach((row, i) => pushDataRow(row, tailKeys[i]));
   };
 
   const processLine = (result: CeosBaseStepResult | TotvsBaseStepResult) => {
@@ -321,10 +304,7 @@ export async function buildReplayWorkbook(
       return;
     }
     pushDataRow(appendObservacionesColumn(line, null), null);
-    if (
-      result.kind === 'other' &&
-      !isBlankOrSeparatorLine(line)
-    ) {
+    if (result.kind === 'other' && !isBlankOrSeparatorLine(line)) {
       segmentAnchorIndex = dataRows.length - 1;
     }
   };
@@ -398,7 +378,7 @@ export async function buildReplayWorkbook(
     const excelRowNum = i + 1;
     const row = ws.getRow(excelRowNum);
     for (let c = 0; c < cells.length; c++) {
-      row.getCell(c + 1).value = cells[c] as string;
+      row.getCell(c + 1).value = cells[c];
     }
     if (dk) {
       const cc = byDocKey.get(dk);

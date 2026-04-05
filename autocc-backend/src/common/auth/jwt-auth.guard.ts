@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
+import type { JwtAccessPayload } from '../../auth/jwt-payload.types';
+import { appConfig } from '../../config/app.config';
 import { IS_PUBLIC_KEY } from './public.decorator';
 
 @Injectable()
@@ -26,7 +28,7 @@ export class JwtAuthGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<{
       headers: Record<string, string | undefined>;
-      user?: unknown;
+      user?: JwtAccessPayload;
     }>();
     const authHeader = request.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -35,9 +37,12 @@ export class JwtAuthGuard implements CanActivate {
 
     const token = authHeader.slice('Bearer '.length).trim();
     try {
-      const payload = await this.jwtService.verifyAsync(token, {
-        secret: process.env.JWT_SECRET ?? 'change-me-in-env',
-      });
+      const payload = await this.jwtService.verifyAsync<JwtAccessPayload>(
+        token,
+        {
+          secret: appConfig.jwtSecret,
+        },
+      );
       request.user = payload;
       return true;
     } catch {

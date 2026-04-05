@@ -34,7 +34,10 @@ export class DocumentNotesAuditService {
   }
 
   update(id: number, updateDocumentNotesAuditDto: UpdateDocumentNotesAuditDto) {
-    return this.documentNotesAuditRepository.update(id, updateDocumentNotesAuditDto);
+    return this.documentNotesAuditRepository.update(
+      id,
+      updateDocumentNotesAuditDto,
+    );
   }
 
   remove(id: number) {

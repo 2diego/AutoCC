@@ -1,9 +1,4 @@
-import {
-  Controller,
-  Get,
-  Param,
-  ParseIntPipe,
-} from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
 import { DocumentNotesAuditService } from './document-notes-audit.service';
 import { Roles } from '../common/auth/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
@@ -11,7 +6,9 @@ import { UserRole } from '../users/entities/user.entity';
 @Controller('document-notes-audit')
 @Roles(UserRole.ADMIN)
 export class DocumentNotesAuditController {
-  constructor(private readonly documentNotesAuditService: DocumentNotesAuditService) {}
+  constructor(
+    private readonly documentNotesAuditService: DocumentNotesAuditService,
+  ) {}
 
   @Get()
   findAll() {

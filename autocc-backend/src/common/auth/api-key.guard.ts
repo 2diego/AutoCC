@@ -25,7 +25,9 @@ export class ApiKeyGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<{ headers: Record<string, string | undefined> }>();
+    const request = context
+      .switchToHttp()
+      .getRequest<{ headers: Record<string, string | undefined> }>();
     const headerApiKey = request.headers['x-api-key'];
     if (!headerApiKey || headerApiKey !== configuredApiKey) {
       throw new UnauthorizedException('Missing or invalid x-api-key');

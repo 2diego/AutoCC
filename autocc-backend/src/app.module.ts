@@ -16,7 +16,17 @@ import { RolesGuard } from './common/auth/roles.guard';
 import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
 
 @Module({
-  imports: [TypeOrmModule.forRoot(databaseConfig), AuthModule, UsersModule, ConsolidationsModule, CcCurrentModule, CcBackupModule, ConsolidationErrorsModule, DocumentNotesAuditModule, ExportsModule],
+  imports: [
+    TypeOrmModule.forRoot(databaseConfig),
+    AuthModule,
+    UsersModule,
+    ConsolidationsModule,
+    CcCurrentModule,
+    CcBackupModule,
+    ConsolidationErrorsModule,
+    DocumentNotesAuditModule,
+    ExportsModule,
+  ],
   controllers: [AppController],
   providers: [
     AppService,

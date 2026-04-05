@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Workbook } from 'exceljs';
 import { Repository } from 'typeorm';
+import { formatFechaDocUtcDmy } from '../common/utils/format-fecha-doc-utc-dmy.util';
 import { CcCurrent } from '../cc-current/entities/cc-current.entity';
 import {
   Consolidation,
@@ -19,16 +20,10 @@ export class ExportsService {
     private readonly consolidationsRepository: Repository<Consolidation>,
   ) {}
 
-  private formatDate(date: Date | null): string {
-    if (!date) return '';
-    const d = new Date(date);
-    const dd = String(d.getUTCDate()).padStart(2, '0');
-    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-    const yyyy = d.getUTCFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-  }
-
-  private getClientMeta(rows: CcCurrent[]): { nombre: string; localidad: string } {
+  private getClientMeta(rows: CcCurrent[]): {
+    nombre: string;
+    localidad: string;
+  } {
     // El snapshot actual no persiste datos maestros dedicados de clientes.
     // Si el parser enriquece rawRowJson en el futuro, esto lo captura automáticamente.
     for (const row of rows) {
@@ -78,7 +73,7 @@ export class ExportsService {
     return {
       c1: '',
       c2: comprobante,
-      c3: this.formatDate(row.fechaDoc),
+      c3: formatFechaDocUtcDmy(row.fechaDoc),
       c4: row.valor ?? '',
       c5: row.saldo ?? '',
       c6: '',

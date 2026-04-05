@@ -1,9 +1,4 @@
-import {
-  Controller,
-  Get,
-  Param,
-  ParseIntPipe,
-} from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
 import { CcBackupService } from './cc-backup.service';
 import { Roles } from '../common/auth/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';

@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateCcCurrentDto } from './dto/create-cc-current.dto';
@@ -83,7 +87,8 @@ export class CcCurrentService {
 
   private parseDocumentKey(documentKey: string) {
     const decoded = decodeURIComponent(documentKey);
-    const [clienteId, tienda, tipoDocumento, ...numeroParts] = decoded.split('|');
+    const [clienteId, tienda, tipoDocumento, ...numeroParts] =
+      decoded.split('|');
     const numeroDocumento = numeroParts.join('|');
     if (!clienteId || !tienda || !tipoDocumento || !numeroDocumento) {
       throw new NotFoundException(
@@ -123,15 +128,18 @@ export class CcCurrentService {
         ? row.observaciones
         : updateDto.observaciones;
     row.motivoDeuda =
-      updateDto.motivoDeuda === undefined ? row.motivoDeuda : updateDto.motivoDeuda;
+      updateDto.motivoDeuda === undefined
+        ? row.motivoDeuda
+        : updateDto.motivoDeuda;
 
     const savedRow = await this.ccCurrentRepository.save(row);
 
     let changedByUser: User | null = null;
     if (updateDto.changedByUserId) {
       changedByUser =
-        (await this.usersRepository.findOneBy({ id: updateDto.changedByUserId })) ??
-        null;
+        (await this.usersRepository.findOneBy({
+          id: updateDto.changedByUserId,
+        })) ?? null;
       if (!changedByUser) {
         throw new BadRequestException(
           `changedByUserId ${updateDto.changedByUserId} no existe`,

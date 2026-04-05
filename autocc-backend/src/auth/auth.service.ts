@@ -4,17 +4,14 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import type { SignOptions } from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
+import { appConfig } from '../config/app.config';
 import { UsersService } from '../users/users.service';
 import { UserRole } from '../users/entities/user.entity';
 import { LoginDto } from './dto/login.dto';
 import { BootstrapAdminDto } from './dto/bootstrap-admin.dto';
-
-type JwtPayload = {
-  sub: number;
-  email: string;
-  role: UserRole;
-};
+import type { JwtAccessPayload } from './jwt-payload.types';
 
 @Injectable()
 export class AuthService {
@@ -23,10 +20,10 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  private async signToken(payload: JwtPayload): Promise<string> {
+  private async signToken(payload: JwtAccessPayload): Promise<string> {
     return this.jwtService.signAsync(payload, {
-      expiresIn: (process.env.JWT_EXPIRES_IN ?? '8h') as never,
-    });
+      expiresIn: appConfig.jwtExpiresIn,
+    } as SignOptions);
   }
 
   async login(dto: LoginDto) {

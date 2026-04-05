@@ -9,9 +9,12 @@ import {
 import { Consolidation } from '../../consolidations/entities/consolidation.entity';
 
 @Entity('cc_current')
-@Index(['erpSource', 'clienteId', 'tienda', 'tipoDocumento', 'numeroDocumento'], {
-  unique: true,
-})
+@Index(
+  ['erpSource', 'clienteId', 'tienda', 'tipoDocumento', 'numeroDocumento'],
+  {
+    unique: true,
+  },
+)
 export class CcCurrent {
   @PrimaryGeneratedColumn()
   id: number;
@@ -50,10 +53,14 @@ export class CcCurrent {
   @Column({ type: 'text', nullable: true })
   motivoDeuda: string | null;
 
-  @ManyToOne(() => Consolidation, (consolidation) => consolidation.currentRows, {
-    nullable: true,
-    onDelete: 'SET NULL',
-  })
+  @ManyToOne(
+    () => Consolidation,
+    (consolidation) => consolidation.currentRows,
+    {
+      nullable: true,
+      onDelete: 'SET NULL',
+    },
+  )
   @JoinColumn({ name: 'last_consolidation_id' })
   lastConsolidation: Consolidation | null;
 }

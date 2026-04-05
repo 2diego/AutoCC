@@ -84,9 +84,9 @@ const extractClientName = (line: string): string => {
   return nameMatch?.[1]?.trim() ?? '';
 };
 
-const extractDocTokenFromParts = (
+const extractDocTokenFromParts = <T>(
   parts: string[],
-  normalizer: (value: string) => unknown | null,
+  normalizer: (value: string) => T | null | undefined,
 ): string | null => {
   const candidates = [parts[1], parts[0], parts[2]]
     .map((value) => (value ?? '').trim())
@@ -216,7 +216,11 @@ const extractCeosErpLineMeta = (
   if (chunks.length === 0) return {};
   const nombreCliente = chunks[0];
   const localidad =
-    chunks.length >= 3 ? chunks[2] : chunks.length === 2 ? chunks[1] : undefined;
+    chunks.length >= 3
+      ? chunks[2]
+      : chunks.length === 2
+        ? chunks[1]
+        : undefined;
   return { nombreCliente, localidad };
 };
 
@@ -247,7 +251,8 @@ const parseCeosIncremental = (content: string): ParseResult => {
       return;
     }
 
-    const [, fechaDocRaw, , tipoDocumento, numeroDocumento, saldoRaw] = tailMatch;
+    const [, fechaDocRaw, , tipoDocumento, numeroDocumento, saldoRaw] =
+      tailMatch;
 
     const ceosErpMeta = extractCeosErpLineMeta(trimmed);
 
@@ -387,7 +392,8 @@ const parseTotvsIncremental = (content: string): ParseResult => {
       return;
     }
 
-    const [, tipoDocumento, numeroDocumento, fechaDocRaw, valorRaw, saldoRaw] = docMatch;
+    const [, tipoDocumento, numeroDocumento, fechaDocRaw, valorRaw, saldoRaw] =
+      docMatch;
 
     const diasAtrasoMatch = trimmed.match(/\s(-?\d{1,4})\s*$/);
     const diasAtraso = diasAtrasoMatch?.[1];

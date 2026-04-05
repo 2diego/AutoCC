@@ -23,15 +23,18 @@ export class ConsolidationsController {
   @Post('run')
   @Roles(UserRole.ADMIN, UserRole.OPERATOR)
   @UseInterceptors(
-    FileFieldsInterceptor([
-      { name: 'baseFile', maxCount: 1 },
-      { name: 'erpFile', maxCount: 1 },
-    ], {
-      limits: {
-        files: 2,
-        fileSize: appConfig.uploadMaxFileSizeBytes,
+    FileFieldsInterceptor(
+      [
+        { name: 'baseFile', maxCount: 1 },
+        { name: 'erpFile', maxCount: 1 },
+      ],
+      {
+        limits: {
+          files: 2,
+          fileSize: appConfig.uploadMaxFileSizeBytes,
+        },
       },
-    }),
+    ),
   )
   run(
     @Body() runConsolidationDto: RunConsolidationDto,

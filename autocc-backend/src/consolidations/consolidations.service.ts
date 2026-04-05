@@ -6,7 +6,6 @@ import { UpdateConsolidationDto } from './dto/update-consolidation.dto';
 import {
   Consolidation,
   ConsolidationStatus,
-  ErpSource,
 } from './entities/consolidation.entity';
 import { CcCurrent } from '../cc-current/entities/cc-current.entity';
 import { CcBackup } from '../cc-backup/entities/cc-backup.entity';
@@ -122,13 +121,18 @@ export class ConsolidationsService {
       );
 
       const baseMap = new Map<string, (typeof normalizedBaseDocs)[number]>();
-      normalizedBaseDocs.forEach((doc) => baseMap.set(buildDocumentKey(doc), doc));
+      normalizedBaseDocs.forEach((doc) =>
+        baseMap.set(buildDocumentKey(doc), doc),
+      );
 
       const addedDocuments = normalizedErpDocs.filter(
         (doc) => !baseMap.has(buildDocumentKey(doc)),
       );
       const finalDocumentsRaw = [...normalizedBaseDocs, ...addedDocuments];
-      const finalDocumentsMap = new Map<string, (typeof finalDocumentsRaw)[number]>();
+      const finalDocumentsMap = new Map<
+        string,
+        (typeof finalDocumentsRaw)[number]
+      >();
       finalDocumentsRaw.forEach((doc) => {
         const key = buildDocumentKey(doc);
         if (!finalDocumentsMap.has(key)) {
