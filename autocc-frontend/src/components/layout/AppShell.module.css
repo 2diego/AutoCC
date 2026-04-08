@@ -1,0 +1,234 @@
+.shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--mainGray);
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: var(--space-3) var(--mainPadding);
+  background: var(--mainWhite);
+  border-bottom: 1px solid var(--mainGray);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(8px);
+  transition: box-shadow 0.18s ease;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.logo {
+  color: var(--mainBlue);
+  font-size: var(--text-md);
+  letter-spacing: -0.02em;
+}
+
+.userDesktop {
+  display: none;
+  font-size: var(--text-sm);
+  color: var(--lightBlue);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+@media (min-width: 768px) {
+  .userDesktop {
+    display: inline;
+  }
+}
+
+.navDesktop {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (min-width: 768px) {
+  .navDesktop {
+    display: flex;
+  }
+}
+
+.navBtn {
+  background: color-mix(in srgb, var(--mainWhite) 72%, var(--mainGray));
+  color: var(--mainBlue);
+  border: 1px solid color-mix(in srgb, var(--mainBlue) 28%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.75rem;
+  font-weight: 600;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    transform 0.12s ease,
+    box-shadow 0.16s ease;
+}
+
+.navBtn:hover {
+  background: color-mix(in srgb, var(--mainBlue) 14%, var(--mainWhite));
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--shadowElevated) 18%, transparent);
+}
+
+.navBtn:active {
+  transform: translateY(1px);
+}
+
+.navBtn:focus-visible,
+.logout:focus-visible,
+.mobileLink:focus-visible,
+.mobileLogout:focus-visible,
+.mobileClose:focus-visible,
+.burger:focus-visible {
+  outline: 2px solid var(--focusRing);
+  outline-offset: 2px;
+}
+
+.logout {
+  background: transparent;
+  color: var(--lightBlue);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.65rem;
+  font-weight: 600;
+  font: inherit;
+  cursor: pointer;
+}
+
+.logout:hover {
+  color: var(--mainBlue);
+  text-decoration: underline;
+}
+
+.burger {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.16s ease;
+}
+
+.burger:hover {
+  background: var(--mainGray);
+}
+
+@media (min-width: 768px) {
+  .burger {
+    display: none;
+  }
+}
+
+.burgerLine {
+  display: block;
+  height: 2px;
+  width: 100%;
+  background: var(--mainBlue);
+  border-radius: 1px;
+}
+
+.mobileDrawer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: color-mix(in srgb, var(--mainWhite) 94%, var(--mainGray));
+  padding: var(--space-4) var(--mainPadding) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  box-shadow: var(--shadow-md);
+  animation: drawerIn 0.18s ease-out;
+}
+
+@media (min-width: 768px) {
+  .mobileDrawer {
+    display: none;
+  }
+}
+
+.mobileUser {
+  margin: 0 0 var(--space-2);
+  font-size: 0.9rem;
+  color: var(--lightBlue);
+  font-weight: 600;
+}
+
+.mobileLink {
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--mainGray);
+  background: var(--mainWhite);
+  color: var(--mainBlue);
+  font-weight: 600;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.12s ease;
+}
+
+.mobileLink:hover {
+  background: var(--mainGray);
+  border-color: color-mix(in srgb, var(--mainBlue) 30%, transparent);
+}
+
+.mobileLogout {
+  margin-top: var(--space-2);
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border: none;
+  background: transparent;
+  color: var(--lightBlue);
+  font-weight: 600;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mobileClose {
+  margin-top: auto;
+  padding: 0.75rem;
+  border: none;
+  background: var(--mainGray);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--mainBlack);
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+@keyframes drawerIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

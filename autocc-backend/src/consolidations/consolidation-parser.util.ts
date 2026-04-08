@@ -107,8 +107,11 @@ const buildTotvsTypeFromToken = (token: string): string => {
 };
 
 const normalizeTotvsDocumentNumber = (token: string): string => token.trim();
+const hasAnyDigit = (value: string): boolean => /\d/.test(value);
 const isLikelyTotvsDocToken = (token: string): boolean =>
-  /^(REC\.?|RA|NF|NCE|NCC|YD1|[A-Z]\d{2}-|D\s+\d)/i.test(token.trim());
+  /^(REC[.\s-]*\d+|RA[.\s-]*\d+|NF[.\s-]*\S*\d+|NCE[.\s-]*\S*\d+|NCC[.\s-]*\S*\d+|YD1[.\s-]*\S*\d+|[A-Z]\d{2}-\S*\d+|D\s+\S*\d+)/i.test(
+    token.trim(),
+  );
 
 const normalizeCeosDocument = (
   token: string,
@@ -117,15 +120,18 @@ const normalizeCeosDocument = (
   if (!t) return null;
 
   if (t.startsWith('REC')) {
+    const numero = t.replace(/^REC[.\s-]*/i, '').trim();
+    if (!hasAnyDigit(numero)) return null;
     return {
       tipoDocumento: 'R',
-      numeroDocumento: t.replace(/^REC[.\s-]*/i, ''),
+      numeroDocumento: numero,
     };
   }
 
-  const match = t.match(/^([FCDR])\s*([A-Z0-9.-]+)?$/);
+  const match = t.match(/^([FCDR])(?:\s+|[.\-])([A-Z0-9.-]+)$/);
   if (!match) return null;
   const [, tipo, numero] = match;
+  if (!hasAnyDigit(numero)) return null;
   return { tipoDocumento: tipo, numeroDocumento: (numero ?? '').trim() };
 };
 

@@ -34,4 +34,23 @@ export class ExportsController {
     );
     res.send(buffer);
   }
+
+  @Get(':erpSource/backup.xlsx')
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR)
+  @Header(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  )
+  async getBackupXlsx(
+    @Param('erpSource', new ParseEnumPipe(ErpSource))
+    erpSource: ErpSource,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.exportsService.buildBackupWorkbook(erpSource);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${erpSource.toLowerCase()}-backup.xlsx"`,
+    );
+    res.send(buffer);
+  }
 }

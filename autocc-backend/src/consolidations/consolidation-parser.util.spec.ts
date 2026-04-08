@@ -31,6 +31,14 @@ describe('consolidation parser fixtures', () => {
           doc.numeroDocumento === '6A51622',
       ),
     ).toBe(true);
+    expect(
+      result.errors.some(
+        (err) =>
+          err.sourceFile === 'BASE' &&
+          err.lineNumber === 2 &&
+          err.errorCode === 'MISSING_CLIENT_CONTEXT',
+      ),
+    ).toBe(false);
   });
 
   it('parses CEOS ERP fixture with real rows', () => {
@@ -61,6 +69,14 @@ describe('consolidation parser fixtures', () => {
           doc.numeroDocumento === 'A06-002200027332',
       ),
     ).toBe(true);
+    expect(
+      result.errors.some(
+        (err) =>
+          err.sourceFile === 'BASE' &&
+          err.lineNumber <= 3 &&
+          err.errorCode === 'MISSING_CLIENT_CONTEXT',
+      ),
+    ).toBe(false);
   });
 
   it('parses TOTVS ERP fixture with real rows', () => {
