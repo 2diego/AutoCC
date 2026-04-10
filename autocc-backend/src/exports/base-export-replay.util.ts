@@ -10,7 +10,7 @@ import {
   buildAtrasoFormulaExcel,
   EXCEL_COL_ATRASO,
   EXCEL_COL_FECHA,
-  fechaDocToExcelLocalDate,
+  fechaDocToExcelSerial,
   shouldApplyAtrasoFormula,
 } from './excel-atraso-formula.util';
 import {
@@ -22,6 +22,8 @@ import {
   type CeosBaseStepResult,
   type TotvsBaseStepResult,
 } from '../consolidations/consolidation-parser.util';
+
+const LINE_SPLIT_REGEX = /\r\n|\n|\r/;
 
 const buildCcRowDocKey = (row: CcCurrent): string =>
   buildDocumentKeyFromParts(
@@ -35,19 +37,64 @@ const buildCcRowDocKey = (row: CcCurrent): string =>
 const stripErpQuotes = (raw: string): string =>
   raw.replace(/^"+|"+$/g, '').trim();
 
+function splitCsvCommaAware(line: string): string[] {
+  const out: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === ',' && !inQuotes) {
+      out.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  out.push(current);
+  return out.map((v) => v.replace(/^"+|"+$/g, '').trim());
+}
+
+function splitBaseLine(rawLine: string): string[] {
+  if (rawLine.includes(';')) {
+    return rawLine.split(';');
+  }
+  if (rawLine.includes(',')) {
+    return splitCsvCommaAware(rawLine);
+  }
+  return [rawLine];
+}
+
+const sanitizeCellText = (value: string): string =>
+  value
+    // Reemplazos por codificación inválida (aparecen como "?" / "�" en Excel).
+    .replace(/\uFFFD/g, '')
+    // NUL heredado de fuentes defectuosas.
+    .replaceAll('\u0000', '');
+
 /** Fila vacía o solo separadores `;` / espacios (no cuenta como “última anotación”). */
 function isBlankOrSeparatorLine(line: string): boolean {
   const t = line.trim();
   if (!t) return true;
-  return /^[\s;]+$/.test(t);
+  if (/^[\s;]+$/.test(t)) return true;
+  const cols = splitBaseLine(line).map((c) => c.trim());
+  return cols.length > 0 && cols.every((c) => c.length === 0);
 }
 
 function appendObservacionesColumn(
   rawLine: string,
   observaciones: string | null,
 ): string[] {
-  const parts = rawLine.split(';');
-  parts.push(observaciones ?? '');
+  const parts = splitBaseLine(rawLine).map(sanitizeCellText);
+  parts.push(sanitizeCellText(observaciones ?? ''));
   return parts;
 }
 
@@ -89,21 +136,6 @@ function buildSyntheticClientHeaderLine(rows: CcCurrent[]): string {
   ).trim();
   const loc = ((raw['localidad'] as string | undefined) ?? '').trim();
   return `Cliente :${first.clienteId} - ${first.tienda} - ${nombre};;;${loc}`;
-}
-
-/**
- * El listado ERP TOTVS/CEOS viene en texto ancho fijo (sin `;`). Solo el base
- * tiene columnas separadas por `;` — si usamos ese `raw` en Excel, todo cae en la columna A.
- */
-function isCsvBaseLikeDocLine(stripped: string): boolean {
-  if (!stripped.includes(';')) return false;
-  const parts = stripped.split(';');
-  if (parts.length < 4) return false;
-  const nonEmpty = parts.filter((p) => p.trim().length > 0);
-  if (nonEmpty.length === 1 && nonEmpty[0].length > 60) {
-    return false;
-  }
-  return true;
 }
 
 /**
@@ -179,29 +211,15 @@ function buildSyntheticDocLineFromCcRow(row: CcCurrent): string {
 }
 
 function formatDocLineForExport(row: CcCurrent): string {
-  const raw = row.rawRowJson?.['raw'];
-  const sourceFile = row.rawRowJson?.['sourceFile'] as string | undefined;
-  if (typeof raw === 'string') {
-    const stripped = stripErpQuotes(raw);
-    if (stripped.length > 0) {
-      const useLiteral =
-        sourceFile === 'BASE' || isCsvBaseLikeDocLine(stripped);
-      if (useLiteral) {
-        return stripped;
-      }
-    }
-  }
+  // Siempre formatear desde estado consolidado para evitar
+  // arrastrar fechas ambiguas (p.ej. MM/DD) desde raw BASE/ERP.
   return buildSyntheticDocLineFromCcRow(row);
 }
 
 /** TypeORM/MySQL puede hidratar `date` como string; no asumir instancia de Date. */
 function fechaDocToMs(fechaDoc: CcCurrent['fechaDoc']): number {
   if (fechaDoc == null) return 0;
-  if (fechaDoc instanceof Date) {
-    const t = fechaDoc.getTime();
-    return Number.isNaN(t) ? 0 : t;
-  }
-  const t = new Date(fechaDoc as string).getTime();
+  const t = new Date(fechaDoc).getTime();
   return Number.isNaN(t) ? 0 : t;
 }
 
@@ -225,7 +243,7 @@ export async function buildReplayWorkbook(
   ccRows: CcCurrent[],
 ): Promise<Buffer> {
   const { byDocKey, byClientKey } = groupCcRows(ccRows);
-  const lines = baseText.split(/\r?\n/);
+  const lines = baseText.split(LINE_SPLIT_REGEX);
 
   const dataRows: string[][] = [];
   /** Alineado con `dataRows`: clave documento para filas de comprobante, null en el resto. */
@@ -241,6 +259,9 @@ export async function buildReplayWorkbook(
     dataRows.push(cells);
     docRowKeys.push(docKey);
   };
+
+  const isRowBlank = (cells: string[]): boolean =>
+    cells.length === 0 || cells.every((c) => c.trim().length === 0);
 
   const flushMissingForClient = (clientKey: string | null) => {
     if (!clientKey) return;
@@ -260,7 +281,9 @@ export async function buildReplayWorkbook(
 
     if (segmentAnchorIndex === null) {
       injections.forEach((row, i) => pushDataRow(row, injKeys[i]));
-      pushDataRow([], null);
+      if (dataRows.length === 0 || !isRowBlank(dataRows[dataRows.length - 1])) {
+        pushDataRow([], null);
+      }
       return;
     }
 
@@ -269,7 +292,9 @@ export async function buildReplayWorkbook(
     dataRows.length = segmentAnchorIndex + 1;
     docRowKeys.length = segmentAnchorIndex + 1;
     injections.forEach((row, i) => pushDataRow(row, injKeys[i]));
-    pushDataRow([], null);
+    if (tail.length === 0 || !isRowBlank(tail[0])) {
+      pushDataRow([], null);
+    }
     tail.forEach((row, i) => pushDataRow(row, tailKeys[i]));
   };
 
@@ -296,8 +321,13 @@ export async function buildReplayWorkbook(
     if (result.kind === 'doc' && result.docKey) {
       baseDocsSeenForClient.add(result.docKey);
       const cc = byDocKey.get(result.docKey);
+      // Si el documento del base ya no existe en `cc_current`, no debe salir en el export replay.
+      if (!cc) {
+        return;
+      }
+      const exportLine = formatDocLineForExport(cc);
       pushDataRow(
-        appendObservacionesColumn(line, cc?.observaciones ?? null),
+        appendObservacionesColumn(exportLine, cc.observaciones ?? null),
         result.docKey,
       );
       segmentAnchorIndex = dataRows.length - 1;
@@ -382,12 +412,14 @@ export async function buildReplayWorkbook(
     }
     if (dk) {
       const cc = byDocKey.get(dk);
-      if (cc && shouldApplyAtrasoFormula(cc)) {
-        const fd = fechaDocToExcelLocalDate(cc.fechaDoc);
-        if (fd) {
-          row.getCell(EXCEL_COL_FECHA).value = fd;
+      if (cc) {
+        const serial = fechaDocToExcelSerial(cc.fechaDoc);
+        if (serial != null) {
+          row.getCell(EXCEL_COL_FECHA).value = serial;
           row.getCell(EXCEL_COL_FECHA).numFmt = 'dd/mm/yyyy';
         }
+      }
+      if (cc && shouldApplyAtrasoFormula(cc)) {
         row.getCell(EXCEL_COL_ATRASO).value = {
           formula: buildAtrasoFormulaExcel(excelRowNum),
         };

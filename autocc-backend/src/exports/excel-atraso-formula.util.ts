@@ -22,13 +22,28 @@ export function shouldApplyAtrasoFormula(cc: CcCurrent): boolean {
   return false;
 }
 
-export function fechaDocToExcelLocalDate(
+/**
+ * Serial Excel (día) calculado sin timezone para evitar corrimientos de fecha.
+ */
+export function fechaDocToExcelSerial(
   fechaDoc: CcCurrent['fechaDoc'],
-): Date | null {
+): number | null {
   if (fechaDoc == null) return null;
-  const d = fechaDoc instanceof Date ? fechaDoc : new Date(fechaDoc as string);
-  if (Number.isNaN(d.getTime())) return null;
-  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const text = String(fechaDoc).trim();
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) {
+    const [, y, m, d] = iso;
+    const utc = Date.UTC(Number(y), Number(m) - 1, Number(d));
+    return utc / 86400000 + 25569;
+  }
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const utc = Date.UTC(
+    parsed.getUTCFullYear(),
+    parsed.getUTCMonth(),
+    parsed.getUTCDate(),
+  );
+  return utc / 86400000 + 25569;
 }
 
 /**

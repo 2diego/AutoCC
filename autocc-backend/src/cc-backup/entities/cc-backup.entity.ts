@@ -29,7 +29,7 @@ export class CcBackup {
   numeroDocumento: string;
 
   @Column({ type: 'date', nullable: true })
-  fechaDoc: Date | null;
+  fechaDoc: string | null;
 
   @Column({ type: 'decimal', precision: 16, scale: 2, nullable: true })
   valor: string | null;

@@ -28,19 +28,109 @@ export type ParseResult = {
   errors: ParserError[];
 };
 
-const parseDateDmy = (raw?: string): Date | null => {
-  if (!raw) return null;
-  const cleaned = raw.trim();
-  const match = cleaned.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!match) return null;
-  const [, dd, mm, yyyy] = match;
-  const date = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
-  return Number.isNaN(date.getTime()) ? null : date;
+/** Soporta CRLF, LF y CR (algunos exports legacy usan solo CR). */
+const LINE_SPLIT_REGEX = /\r\n|\n|\r/;
+
+/** Normaliza separadores: recorta y colapsa espacios alrededor de `/`. */
+export const normalizeDmYDateToken = (raw: string): string =>
+  raw.trim().replace(/\s*\/\s*/g, '/');
+
+/**
+ * Indica si el texto encaja en la forma día/mes/año (d y m: 1–2 cifras; año: 2 o 4 cifras).
+ * No garantiza que sea una fecha de calendario válida.
+ */
+export const documentDateMatchesDmYPattern = (raw: string): boolean => {
+  const n = normalizeDmYDateToken(raw);
+  return /^\d{1,2}\/\d{1,2}\/(\d{2}|\d{4})$/.test(n);
 };
+
+/**
+ * Parsea fecha en orden **día / mes / año** (regla de negocio).
+ * - Día y mes: 1 o 2 dígitos (sin ceros obligatorios).
+ * - Año: 2 dígitos (se interpreta como 20xx) o 4 dígitos.
+ * - Espacios opcionales alrededor de las barras.
+ */
+export function parseDocumentDateDmY(raw?: string | null): Date | null {
+  if (raw == null) return null;
+  const n = normalizeDmYDateToken(raw);
+  const match = n.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const yStr = match[3];
+  const year =
+    yStr.length === 2 ? 2000 + Number(yStr) : Number(yStr);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+}
+
+/** @deprecated Usar parseDocumentDateDmY (soporta además año de 2 cifras). */
+export const parseDocumentDateDdMmYyyy = parseDocumentDateDmY;
+
+type DateFieldCheck =
+  | { date: Date; error?: undefined }
+  | { date: null; error: ParserError };
+
+/**
+ * Valida un campo donde se espera d/m/y. Si falta o no cumple, devuelve error para registrar alerta.
+ */
+function checkExpectedDocumentDateField(
+  raw: string | undefined,
+  fieldLabel: string,
+  lineNumber: number,
+  rawLine: string,
+  sourceFile: 'BASE' | 'ERP',
+): DateFieldCheck {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) {
+    return {
+      date: null,
+      error: {
+        sourceFile,
+        lineNumber,
+        rawLine,
+        errorCode: 'MISSING_DOCUMENT_DATE',
+        message: `Falta la fecha (${fieldLabel}). Regla: día/mes/año, con 1–2 cifras en día y mes y año de 2 o 4 cifras.`,
+      },
+    };
+  }
+  const date = parseDocumentDateDmY(trimmed);
+  if (date) {
+    return { date };
+  }
+  const patternOk = documentDateMatchesDmYPattern(trimmed);
+  return {
+    date: null,
+    error: {
+      sourceFile,
+      lineNumber,
+      rawLine,
+      errorCode: patternOk
+        ? 'INVALID_DOCUMENT_DATE_CALENDAR'
+        : 'INVALID_DOCUMENT_DATE_FORMAT',
+      message: patternOk
+        ? `La fecha "${trimmed}" (${fieldLabel}) no es válida en el calendario.`
+        : `La fecha "${trimmed}" (${fieldLabel}) no cumple el formato día/mes/año (d y m: 1–2 cifras; año: 2 o 4 cifras; orden día/mes/año).`,
+    },
+  };
+}
 
 const parseMoneyToDecimal = (raw?: string): string | null => {
   if (!raw) return null;
-  const cleaned = raw.trim();
+  const cleaned = raw
+    .trim()
+    .replace(/\uFFFD/g, '')
+    .replaceAll('\u0000', '')
+    .replace(/[^\d,.-]/g, '');
   if (!cleaned) return null;
   try {
     const parsed = parseMoneyERP(cleaned);
@@ -49,6 +139,51 @@ const parseMoneyToDecimal = (raw?: string): string | null => {
     return null;
   }
 };
+
+const stripWrappingQuotes = (value: string): string =>
+  value.replace(/^"+|"+$/g, '').trim();
+
+const splitCsvCommaAware = (line: string): string[] => {
+  const out: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === ',' && !inQuotes) {
+      out.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  out.push(current);
+  return out.map((v) => stripWrappingQuotes(v));
+};
+
+const splitBaseColumns = (line: string): string[] => {
+  if (line.includes(';')) {
+    return line.split(';').map((v) => stripWrappingQuotes(v));
+  }
+  if (line.includes(',')) {
+    return splitCsvCommaAware(line);
+  }
+  return [stripWrappingQuotes(line)];
+};
+
+const joinBaseColumnsForHeader = (line: string): string =>
+  splitBaseColumns(line)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .join(' ');
 
 export const extractClientAndStore = (
   line: string,
@@ -107,6 +242,14 @@ const buildTotvsTypeFromToken = (token: string): string => {
 };
 
 const normalizeTotvsDocumentNumber = (token: string): string => token.trim();
+const canonicalizeTotvsNumeroForKey = (numeroDocumento: string): string => {
+  const t = numeroDocumento.trim().toUpperCase();
+  const m = t.match(/^([A-Z]\d{2}-)(\d+)$/);
+  if (!m) return t;
+  const [, prefix, digits] = m;
+  const normalizedDigits = digits.replace(/^0+/, '') || '0';
+  return `${prefix}${normalizedDigits}`;
+};
 const hasAnyDigit = (value: string): boolean => /\d/.test(value);
 const isLikelyTotvsDocToken = (token: string): boolean =>
   /^(REC[.\s-]*\d+|RA[.\s-]*\d+|NF[.\s-]*\S*\d+|NCE[.\s-]*\S*\d+|NCC[.\s-]*\S*\d+|YD1[.\s-]*\S*\d+|[A-Z]\d{2}-\S*\d+|D\s+\S*\d+)/i.test(
@@ -128,7 +271,7 @@ const normalizeCeosDocument = (
     };
   }
 
-  const match = t.match(/^([FCDR])(?:\s+|[.\-])([A-Z0-9.-]+)$/);
+  const match = t.match(/^([FCDR])(?:\s+|[.-])([A-Z0-9.-]+)$/);
   if (!match) return null;
   const [, tipo, numero] = match;
   if (!hasAnyDigit(numero)) return null;
@@ -136,7 +279,7 @@ const normalizeCeosDocument = (
 };
 
 const parseCeosBase = (content: string): ParseResult => {
-  const lines = content.split(/\r?\n/);
+  const lines = content.split(LINE_SPLIT_REGEX);
   const documents: ParsedDocument[] = [];
   const errors: ParserError[] = [];
   let currentClient = '';
@@ -149,17 +292,17 @@ const parseCeosBase = (content: string): ParseResult => {
     const trimmed = line.trim();
     if (!trimmed) return;
 
-    const clientHeader = extractClientAndStore(trimmed);
+    const parts = splitBaseColumns(line);
+    const headerText = parts.join(' ');
+    const clientHeader = extractClientAndStore(headerText || trimmed);
     if (clientHeader) {
       currentClient = clientHeader.clienteId;
       currentStore = clientHeader.tienda ?? '01';
-      currentClientName = extractClientName(trimmed);
-      currentLocalidad = extractLocalidadFromSemicolon(line);
+      currentClientName = extractClientName(headerText || trimmed);
+      currentLocalidad = extractLocalidadFromSemicolon(parts.join(';'));
       return;
     }
 
-    if (!line.includes(';')) return;
-    const parts = line.split(';');
     const docToken = extractDocTokenFromParts(parts, normalizeCeosDocument);
     if (!docToken) return;
 
@@ -177,7 +320,18 @@ const parseCeosBase = (content: string): ParseResult => {
       return;
     }
 
-    const fechaDoc = parseDateDmy(parts[2]);
+    const fechaCheck = checkExpectedDocumentDateField(
+      parts[2],
+      'fecha del comprobante (columna de fecha en base CEOS)',
+      lineNumber,
+      line,
+      'BASE',
+    );
+    if (fechaCheck.error) {
+      errors.push(fechaCheck.error);
+      return;
+    }
+    const fechaDoc = fechaCheck.date;
     const valor = parseMoneyToDecimal(parts[3]);
     const saldo = parseMoneyToDecimal(parts[4]) ?? valor;
 
@@ -211,7 +365,7 @@ const extractCeosErpLineMeta = (
   const idMatch = trimmed.match(/^(\d+)\s+/);
   if (!idMatch) return {};
   const afterId = trimmed.slice(idMatch[0].length);
-  const firstDateIdx = afterId.search(/\d{2}\/\d{2}\/\d{4}/);
+  const firstDateIdx = afterId.search(/\d{1,2}\/\d{1,2}\/\d{2,4}/);
   const preamble =
     firstDateIdx >= 0 ? afterId.slice(0, firstDateIdx).trim() : afterId.trim();
   if (!preamble) return {};
@@ -231,7 +385,7 @@ const extractCeosErpLineMeta = (
 };
 
 const parseCeosIncremental = (content: string): ParseResult => {
-  const lines = content.split(/\r?\n/);
+  const lines = content.split(LINE_SPLIT_REGEX);
   const documents: ParsedDocument[] = [];
   const errors: ParserError[] = [];
 
@@ -241,7 +395,7 @@ const parseCeosIncremental = (content: string): ParseResult => {
     if (!trimmed) return;
 
     const tailMatch = trimmed.match(
-      /(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+\d+\s+([FCDR])\s+([A-Z0-9.-]+)\s+(-?[\d.,]+)\s*$/i,
+      /(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+\d+\s+([FCDR])\s+([A-Z0-9.-]+)\s+(-?[\d.,]+)\s*$/i,
     );
     if (!tailMatch) return;
 
@@ -257,8 +411,32 @@ const parseCeosIncremental = (content: string): ParseResult => {
       return;
     }
 
-    const [, fechaDocRaw, , tipoDocumento, numeroDocumento, saldoRaw] =
+    const [, fechaDocRaw, fechaVtoRaw, tipoDocumento, numeroDocumento, saldoRaw] =
       tailMatch;
+
+    const emisionCheck = checkExpectedDocumentDateField(
+      fechaDocRaw,
+      'fecha de emisión del comprobante (listado ERP CEOS)',
+      lineNumber,
+      line,
+      'ERP',
+    );
+    if (emisionCheck.error) {
+      errors.push(emisionCheck.error);
+      return;
+    }
+
+    const vtoCheck = checkExpectedDocumentDateField(
+      fechaVtoRaw,
+      'fecha de vencimiento (listado ERP CEOS)',
+      lineNumber,
+      line,
+      'ERP',
+    );
+    if (vtoCheck.error) {
+      errors.push(vtoCheck.error);
+      return;
+    }
 
     const ceosErpMeta = extractCeosErpLineMeta(trimmed);
 
@@ -268,7 +446,7 @@ const parseCeosIncremental = (content: string): ParseResult => {
       tienda: '01',
       tipoDocumento: tipoDocumento.toUpperCase(),
       numeroDocumento: numeroDocumento.toUpperCase(),
-      fechaDoc: parseDateDmy(fechaDocRaw),
+      fechaDoc: emisionCheck.date,
       valor: parseMoneyToDecimal(saldoRaw),
       saldo: parseMoneyToDecimal(saldoRaw),
       clienteNombre: ceosErpMeta.nombreCliente,
@@ -286,7 +464,7 @@ const parseCeosIncremental = (content: string): ParseResult => {
 };
 
 const parseTotvsBase = (content: string): ParseResult => {
-  const lines = content.split(/\r?\n/);
+  const lines = content.split(LINE_SPLIT_REGEX);
   const documents: ParsedDocument[] = [];
   const errors: ParserError[] = [];
   let currentClient = '';
@@ -299,17 +477,17 @@ const parseTotvsBase = (content: string): ParseResult => {
     const trimmed = line.trim();
     if (!trimmed) return;
 
-    const clientHeader = extractClientAndStore(trimmed);
+    const parts = splitBaseColumns(line);
+    const headerText = parts.join(' ');
+    const clientHeader = extractClientAndStore(headerText || trimmed);
     if (clientHeader) {
       currentClient = clientHeader.clienteId;
       currentStore = clientHeader.tienda ?? currentStore;
-      currentClientName = extractClientName(trimmed);
-      currentLocalidad = extractLocalidadFromSemicolon(line);
+      currentClientName = extractClientName(headerText || trimmed);
+      currentLocalidad = extractLocalidadFromSemicolon(parts.join(';'));
       return;
     }
 
-    if (!line.includes(';')) return;
-    const parts = line.split(';');
     const token = extractDocTokenFromParts(parts, (candidate) =>
       isLikelyTotvsDocToken(candidate) ? candidate : null,
     );
@@ -332,7 +510,18 @@ const parseTotvsBase = (content: string): ParseResult => {
         ? token.replace(/^REC[.\s-]*/i, '').trim()
         : normalizeTotvsDocumentNumber(token);
 
-    const fechaDoc = parseDateDmy(parts[2]);
+    const fechaCheck = checkExpectedDocumentDateField(
+      parts[2],
+      'fecha del comprobante (columna de fecha en base TOTVS)',
+      lineNumber,
+      line,
+      'BASE',
+    );
+    if (fechaCheck.error) {
+      errors.push(fechaCheck.error);
+      return;
+    }
+    const fechaDoc = fechaCheck.date;
     const valor = parseMoneyToDecimal(parts[3]);
     const saldo = parseMoneyToDecimal(parts[4]) ?? valor;
 
@@ -350,6 +539,7 @@ const parseTotvsBase = (content: string): ParseResult => {
       rawRowJson: {
         sourceFile: 'BASE',
         raw: line,
+        fechaDocRaw: parts[2] ?? undefined,
         nombreCliente: currentClientName || undefined,
         localidad: currentLocalidad || undefined,
       },
@@ -360,7 +550,7 @@ const parseTotvsBase = (content: string): ParseResult => {
 };
 
 const parseTotvsIncremental = (content: string): ParseResult => {
-  const lines = content.split(/\r?\n/);
+  const lines = content.split(LINE_SPLIT_REGEX);
   const documents: ParsedDocument[] = [];
   const errors: ParserError[] = [];
   let currentClient = '';
@@ -383,7 +573,7 @@ const parseTotvsIncremental = (content: string): ParseResult => {
     }
 
     const docMatch = trimmed.match(
-      /^([A-Z]{2,3})\s+([A-Z0-9.-]+)\s+(\d{2}\/\d{2}\/\d{4})\s+\d{2}\/\d{2}\/\d{4}\s+(-?[\d.,]+)\s+(-?[\d.,]+)/i,
+      /^([A-Z]{2,3})\s+([A-Z0-9.-]+)\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(-?[\d.,]+)\s+(-?[\d.,]+)/i,
     );
     if (!docMatch) return;
 
@@ -398,8 +588,39 @@ const parseTotvsIncremental = (content: string): ParseResult => {
       return;
     }
 
-    const [, tipoDocumento, numeroDocumento, fechaDocRaw, valorRaw, saldoRaw] =
-      docMatch;
+    const [
+      ,
+      tipoDocumento,
+      numeroDocumento,
+      fechaDocRaw,
+      fechaVtoRaw,
+      valorRaw,
+      saldoRaw,
+    ] = docMatch;
+
+    const emisionCheck = checkExpectedDocumentDateField(
+      fechaDocRaw,
+      'fecha de emisión del comprobante (listado ERP TOTVS)',
+      lineNumber,
+      line,
+      'ERP',
+    );
+    if (emisionCheck.error) {
+      errors.push(emisionCheck.error);
+      return;
+    }
+
+    const vtoCheck = checkExpectedDocumentDateField(
+      fechaVtoRaw,
+      'fecha de vencimiento (listado ERP TOTVS)',
+      lineNumber,
+      line,
+      'ERP',
+    );
+    if (vtoCheck.error) {
+      errors.push(vtoCheck.error);
+      return;
+    }
 
     const diasAtrasoMatch = trimmed.match(/\s(-?\d{1,4})\s*$/);
     const diasAtraso = diasAtrasoMatch?.[1];
@@ -412,7 +633,7 @@ const parseTotvsIncremental = (content: string): ParseResult => {
       localidad: currentLocalidad || undefined,
       tipoDocumento: tipoDocumento.toUpperCase(),
       numeroDocumento: numeroDocumento.toUpperCase(),
-      fechaDoc: parseDateDmy(fechaDocRaw),
+      fechaDoc: emisionCheck.date,
       valor: parseMoneyToDecimal(valorRaw),
       saldo: parseMoneyToDecimal(saldoRaw),
       rawRowJson: {
@@ -434,8 +655,13 @@ export const buildDocumentKeyFromParts = (
   tienda: string,
   tipoDocumento: string,
   numeroDocumento: string,
-): string =>
-  `${erpSource}|${clienteId}|${tienda}|${tipoDocumento}|${numeroDocumento}`;
+): string => {
+  const numeroForKey =
+    erpSource === ErpSource.TOTVS
+      ? canonicalizeTotvsNumeroForKey(numeroDocumento)
+      : numeroDocumento;
+  return `${erpSource}|${clienteId}|${tienda}|${tipoDocumento}|${numeroForKey}`;
+};
 
 export const buildDocumentKey = (doc: ParsedDocument): string =>
   buildDocumentKeyFromParts(
@@ -480,7 +706,8 @@ export function stepCeosBaseLine(
   if (!trimmed) {
     return { kind: 'empty', next: { ...state } };
   }
-  const clientHeader = extractClientAndStore(trimmed);
+  const headerText = joinBaseColumnsForHeader(line);
+  const clientHeader = extractClientAndStore(headerText || trimmed);
   if (clientHeader) {
     const next: CeosReplayState = {
       currentClient: clientHeader.clienteId,
@@ -492,10 +719,10 @@ export function stepCeosBaseLine(
       next,
     };
   }
-  if (!line.includes(';')) {
+  const parts = splitBaseColumns(line);
+  if (parts.length <= 1) {
     return { kind: 'other', next: { ...state } };
   }
-  const parts = line.split(';');
   const docToken = extractDocTokenFromParts(parts, normalizeCeosDocument);
   if (!docToken) {
     return { kind: 'other', next: { ...state } };
@@ -525,7 +752,8 @@ export function stepTotvsBaseLine(
   if (!trimmed) {
     return { kind: 'empty', next: { ...state } };
   }
-  const clientHeader = extractClientAndStore(trimmed);
+  const headerText = joinBaseColumnsForHeader(line);
+  const clientHeader = extractClientAndStore(headerText || trimmed);
   if (clientHeader) {
     const next: TotvsReplayState = {
       currentClient: clientHeader.clienteId,
@@ -537,10 +765,10 @@ export function stepTotvsBaseLine(
       next,
     };
   }
-  if (!line.includes(';')) {
+  const parts = splitBaseColumns(line);
+  if (parts.length <= 1) {
     return { kind: 'other', next: { ...state } };
   }
-  const parts = line.split(';');
   const token = extractDocTokenFromParts(parts, (candidate) =>
     isLikelyTotvsDocToken(candidate) ? candidate : null,
   );
@@ -574,11 +802,42 @@ export const parseBaseFile = (
     : parseTotvsBase(content);
 };
 
-export const parseIncrementalFile = (
+function parseIncrementalListingInternal(
   erpSource: ErpSource,
   content: string,
-): ParseResult => {
+): ParseResult {
   return erpSource === ErpSource.CEOS
     ? parseCeosIncremental(content)
     : parseTotvsIncremental(content);
-};
+}
+
+/** Listado incremental CEOS/TOTVS: documentos del ERP (mismo formato para agregar o para cruzar con el base al eliminar). */
+export const parseErpListingForDocumentAdd = parseIncrementalListingInternal;
+
+export const parseErpListingForDocumentRemoval =
+  parseIncrementalListingInternal;
+
+/**
+ * Intenta leer la fecha declarada en el CSV ERP para cruzar con `erpEmisionDate` del usuario.
+ * - CEOS: primera coincidencia `FECHA : d/m/y`.
+ * - TOTVS: **`Pregunta 01 : Fecha Desde?`** (parámetro del listado SIGA), no `Fch.Ref` ni `Emision`
+ *   del encabezado (esas suelen ser la fecha de impresión/ejecución del reporte).
+ *   Si no hay bloque de preguntas, se usa `Fch.Ref:` como respaldo.
+ */
+export function tryExtractDeclaredEmisionDateFromErpCsv(
+  erpSource: ErpSource,
+  content: string,
+): Date | null {
+  if (erpSource === ErpSource.CEOS) {
+    const token = content.match(/FECHA\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1];
+    return parseDocumentDateDmY(token);
+  }
+  const fechaDesde = content.match(
+    /Pregunta\s*01\s*:\s*Fecha\s+Desde\??\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+  )?.[1];
+  if (fechaDesde) {
+    return parseDocumentDateDmY(fechaDesde);
+  }
+  const fchRef = content.match(/Fch\.Ref:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1];
+  return parseDocumentDateDmY(fchRef);
+}

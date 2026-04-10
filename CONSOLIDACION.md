@@ -10,8 +10,8 @@ Hay dos operaciones distintas, ambas con **dos archivos CSV** y el mismo tipo de
 
 | Operación | Archivo 1 | Archivo 2 |
 |-----------|-----------|-----------|
-| **Agregar documentos** | Cuenta corriente **base** (snapshot completo o export de CC) | Listado ERP **actualizado** (incremental / novedades) |
-| **Eliminar documentos** | Mismo concepto de **base** | Mismo formato de listado ERP **actualizado** |
+| **Agregar documentos** | Cuenta corriente **base** (snapshot completo o export de CC) | Listado ERP **actualizado** desde la fecha de actualizacion de la cuenta corriente a fecha actual (incremental / novedades) |
+| **Eliminar documentos** | Mismo concepto de **base** | Listado ERP **actualizado** historico a fecha de actualizacion de cuenta corriente|
 
 En ambos casos el backend identifica cada comprobante con una **clave lógica** y normaliza textos (mayúsculas, espacios, reglas propias de TOTVS para el número de documento).
 
@@ -20,7 +20,7 @@ Además, en la **interfaz** el usuario informa:
 - **Fecha de actualización del archivo base** (`baseActualizacionDate`, formato `YYYY-MM-DD` en el formulario).
 - **Fecha de emisión del archivo ERP** (`erpEmisionDate`, mismo formato).
 
-Esas fechas se validan en el servidor. La **fecha de emisión** del formulario es la que define el **corte** al eliminar documentos (no se toma del texto del CSV como única fuente de verdad). Si el CSV declara otra fecha en cabecera (CEOS: `FECHA :`, TOTVS: `Fch.Ref:`), el sistema puede **exigir confirmación** si no coincide con lo ingresado.
+Esas fechas se validan en el servidor. La **fecha de emisión** del formulario es la que define el **corte** al eliminar documentos (no se toma del texto del CSV como única fuente de verdad). Si el CSV declara otra fecha que la del usuario en los puntos usados para validación (CEOS: `FECHA :`; TOTVS: **`Pregunta 01 : Fecha Desde?`**, no la fecha de impresión `Fch.Ref` / `Emision` del encabezado), el sistema puede **exigir confirmación** si no coincide con lo ingresado.
 
 ---
 
@@ -58,7 +58,7 @@ Los errores se persisten en la consolidación y se muestran en la **vista previa
 ### 2.3 Fecha declarada en cabecera del CSV ERP (solo validación cruzada)
 
 - **CEOS:** primera coincidencia de `FECHA : d/m/y` (misma regla flexible de dígitos).
-- **TOTVS:** `Fch.Ref: d/m/y`.
+- **TOTVS:** la línea **`Pregunta 01 : Fecha Desde? … d/m/y`** (parámetro del listado SIGA / SSRCC001). Esa es la fecha de criterio del extracto. Las líneas `Fch.Ref:` y `Emision:` del encabezado suelen ser la **fecha de generación del reporte** (p. ej. el día de la corrida) y **no** se usan para esta validación. Si el archivo no trae el bloque de preguntas, se usa `Fch.Ref:` solo como respaldo.
 
 Si existe y **no coincide** con `erpEmisionDate` del usuario, la API responde con error `ERP_FILE_DATE_MISMATCH` hasta que el usuario confirma continuar (`confirmFileDateMismatch`).
 

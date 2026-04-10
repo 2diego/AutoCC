@@ -4,7 +4,7 @@ export class CreateCcCurrentDto {
   tienda: string;
   tipoDocumento: string;
   numeroDocumento: string;
-  fechaDoc?: Date | null;
+  fechaDoc?: string | null;
   valor?: string | null;
   saldo?: string | null;
   rawRowJson?: Record<string, unknown> | null;

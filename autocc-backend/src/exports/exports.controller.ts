@@ -29,6 +29,12 @@ export class ExportsController {
   ) {
     const buffer = await this.exportsService.buildCurrentWorkbook(erpSource);
     res.setHeader(
+      'Cache-Control',
+      'no-store, no-cache, must-revalidate, proxy-revalidate',
+    );
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader(
       'Content-Disposition',
       `attachment; filename="${erpSource.toLowerCase()}-current.xlsx"`,
     );
@@ -47,6 +53,12 @@ export class ExportsController {
     @Res() res: Response,
   ) {
     const buffer = await this.exportsService.buildBackupWorkbook(erpSource);
+    res.setHeader(
+      'Cache-Control',
+      'no-store, no-cache, must-revalidate, proxy-revalidate',
+    );
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${erpSource.toLowerCase()}-backup.xlsx"`,

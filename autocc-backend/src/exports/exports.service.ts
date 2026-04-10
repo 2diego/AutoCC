@@ -23,6 +23,43 @@ export class ExportsService {
     private readonly consolidationsRepository: Repository<Consolidation>,
   ) {}
 
+  private async loadCurrentRowsDateSafe(
+    erpSource: string,
+  ): Promise<CcCurrent[]> {
+    const rowsRaw: unknown = await this.ccCurrentRepository.query(
+      `
+      SELECT
+        id,
+        erpSource,
+        clienteId,
+        tienda,
+        tipoDocumento,
+        numeroDocumento,
+        DATE_FORMAT(fechaDoc, '%Y-%m-%d') AS fechaDoc,
+        valor,
+        saldo,
+        rawRowJson,
+        observaciones,
+        motivoDeuda
+      FROM cc_current
+      WHERE erpSource = ?
+      ORDER BY tienda ASC, fechaDoc ASC, tipoDocumento ASC, numeroDocumento ASC
+      `,
+      [erpSource],
+    );
+    const rows = Array.isArray(rowsRaw)
+      ? (rowsRaw as Record<string, unknown>[])
+      : [];
+
+    return rows.map((row: Record<string, unknown>) => ({
+      ...row,
+      rawRowJson:
+        typeof row.rawRowJson === 'string'
+          ? (JSON.parse(row.rawRowJson) as Record<string, unknown>)
+          : ((row.rawRowJson as Record<string, unknown> | null) ?? null),
+    })) as CcCurrent[];
+  }
+
   private getClientMeta(rows: CcCurrent[]): {
     nombre: string;
     localidad: string;
@@ -131,15 +168,7 @@ export class ExportsService {
   }
 
   async buildCurrentWorkbook(erpSource: string): Promise<Buffer> {
-    const rows = await this.ccCurrentRepository.find({
-      where: { erpSource },
-      order: {
-        tienda: 'ASC',
-        fechaDoc: 'ASC',
-        tipoDocumento: 'ASC',
-        numeroDocumento: 'ASC',
-      },
-    });
+    const rows = await this.loadCurrentRowsDateSafe(erpSource);
 
     const latestBase = await this.consolidationsRepository.findOne({
       where: {
