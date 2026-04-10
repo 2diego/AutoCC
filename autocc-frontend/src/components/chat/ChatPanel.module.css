@@ -1,0 +1,180 @@
+.wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--mainPadding);
+  gap: var(--space-4);
+}
+
+.hero {
+  flex-shrink: 0;
+}
+
+.eyebrow {
+  margin: 0 0 0.25rem;
+  color: var(--lightBlue);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  font-size: var(--text-xs);
+}
+
+.title {
+  margin: 0 0 0.35rem;
+  font-size: var(--text-xl);
+  color: var(--mainBlue);
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--lightBlue);
+  font-size: var(--text-md);
+  line-height: 1.45;
+}
+
+.quickActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.quickAction {
+  border: 1px solid color-mix(in srgb, var(--mainBlue) 30%, transparent);
+  background: color-mix(in srgb, var(--mainWhite) 85%, var(--mainGray));
+  color: var(--mainBlue);
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition:
+    transform 0.12s ease,
+    border-color 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.quickAction:focus-visible {
+  outline: 2px solid var(--focusRing);
+  outline-offset: 2px;
+}
+
+.quickAction:disabled {
+  opacity: 0.72;
+}
+
+.transcript {
+  flex: 1;
+  min-height: 160px;
+  background: var(--mainWhite);
+  border: 1px solid var(--mainGray);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  overflow: auto;
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+}
+
+.emptyStateBadge {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  background: color-mix(in srgb, var(--mainBlue) 16%, var(--mainWhite));
+  border: 1px solid color-mix(in srgb, var(--mainBlue) 28%, transparent);
+}
+
+.message {
+  max-width: min(90%, 560px);
+  border-radius: var(--radius-lg);
+  padding: 0.7rem 0.8rem;
+  animation: messageIn 0.22s ease-out;
+}
+
+.messageBot {
+  background: color-mix(in srgb, var(--mainBlue) 12%, var(--mainWhite));
+  border: 1px solid color-mix(in srgb, var(--mainBlue) 30%, transparent);
+}
+
+.messageUser {
+  justify-self: end;
+  background: color-mix(in srgb, var(--mainGray) 60%, var(--mainWhite));
+  border: 1px solid var(--mainGray);
+}
+
+.messageLabel {
+  margin: 0 0 0.25rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--lightBlue);
+}
+
+.messageText {
+  margin: 0;
+  color: var(--mainBlack);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.composer {
+  flex-shrink: 0;
+  display: grid;
+  gap: var(--space-2);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 3rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--mainGray);
+  border-radius: var(--radius-md);
+  font: inherit;
+  background: color-mix(in srgb, var(--mainGray) 55%, var(--mainWhite));
+  color: var(--mainBlack);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.textarea:focus {
+  border-color: color-mix(in srgb, var(--mainBlue) 45%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mainBlue) 22%, transparent);
+}
+
+.textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.composerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+@media (min-width: 768px) {
+  .title {
+    font-size: 1.75rem;
+  }
+}
+
+@keyframes messageIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

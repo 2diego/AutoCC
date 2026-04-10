@@ -1,0 +1,358 @@
+/* Formularios y superficies compartidas (paleta en index.css) */
+
+.formGrid {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.surfaceSection {
+  border: 1px solid color-mix(in srgb, var(--mainBlue) 14%, var(--mainGray));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--mainWhite) 96%, var(--mainGray));
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.surfaceSection:hover {
+  border-color: color-mix(in srgb, var(--mainBlue) 24%, var(--mainGray));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--shadowElevated) 22%, transparent);
+}
+
+.fieldLabel {
+  display: grid;
+  gap: var(--space-1);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  min-width: 0;
+}
+
+.input,
+.select {
+  width: 100%;
+  max-width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--mainGray);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  background: var(--mainWhite);
+  color: var(--mainBlack);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.input:focus,
+.select:focus {
+  outline: 2px solid var(--focusRing);
+  outline-offset: 1px;
+  border-color: color-mix(in srgb, var(--mainBlue) 48%, transparent);
+}
+
+.btn {
+  background: var(--mainBlue);
+  color: var(--onPrimary);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.9rem;
+  font-weight: 600;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.16s ease,
+    background-color 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--mainBlueHover);
+  box-shadow: var(--shadow-soft);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--focusRing);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  background: var(--lightBlue);
+  cursor: not-allowed;
+}
+
+.btn.btnSecondary {
+  background: transparent;
+  color: var(--mainBlue);
+  border: 1px solid color-mix(in srgb, var(--mainBlue) 35%, transparent);
+}
+
+.btn.btnSecondary:hover:not(:disabled) {
+  background: var(--mainGray);
+}
+
+.muted {
+  color: var(--lightBlue);
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-2);
+}
+
+.ok {
+  color: var(--ok);
+  font-weight: 700;
+  margin: 0.35rem 0 0;
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.65rem;
+}
+
+.error {
+  color: var(--danger);
+  font-weight: 700;
+  margin: 0.35rem 0 0;
+  border: 1px solid color-mix(in srgb, var(--danger) 38%, transparent);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.65rem;
+}
+
+/* Confirmación in-app (p. ej. fecha ERP vs input), alineado a surface / stat */
+.dateMismatchPanel {
+  margin: 0;
+}
+
+.dateMismatchGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  background: var(--mainGray);
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--mainBlue) 12%, transparent);
+}
+
+@media (min-width: 420px) {
+  .dateMismatchGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.dateMismatchGrid dt {
+  font-size: var(--text-sm);
+  color: var(--lightBlue);
+  margin: 0 0 var(--space-1);
+  font-weight: 600;
+}
+
+.dateMismatchGrid dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--mainBlue);
+}
+
+.dateMismatchActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-top: var(--space-4);
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+
+.statItem {
+  margin: 0;
+  background: var(--mainGray);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) 0.65rem;
+  font-size: 0.85rem;
+}
+
+.preJson {
+  background: var(--preBg);
+  color: var(--preFg);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  overflow: auto;
+  font-size: 0.8rem;
+  max-height: 220px;
+  border: 1px solid color-mix(in srgb, var(--mainBlue) 16%, transparent);
+}
+
+.preJsonCompact {
+  max-height: 4rem;
+}
+
+.sectionTitle {
+  margin: 0 0 0.45rem;
+  font-size: var(--text-lg);
+  color: var(--lightBlue);
+}
+
+.sectionHint {
+  margin-bottom: 0.5rem;
+}
+
+.inlineActions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.sheetBackRow {
+  margin-bottom: var(--space-3);
+}
+
+.documentHub {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.documentHubCard {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  border: 1px solid color-mix(in srgb, var(--mainBlue) 18%, var(--mainGray));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--mainWhite) 96%, var(--mainGray));
+  padding: var(--space-4) var(--space-3);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.12s ease;
+}
+
+.documentHubCard:hover {
+  border-color: color-mix(in srgb, var(--mainBlue) 35%, var(--mainGray));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--shadowElevated) 18%, transparent);
+}
+
+.documentHubCard:active {
+  transform: translateY(1px);
+}
+
+.documentHubCard:focus-visible {
+  outline: 2px solid var(--focusRing);
+  outline-offset: 2px;
+}
+
+.documentHubCardTitle {
+  margin: 0 0 0.35rem;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--mainBlue);
+}
+
+.documentHubCardDesc {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--lightBlue);
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .inlineActions > * {
+    width: 100%;
+  }
+
+  .fieldLabel .select,
+  .fieldLabel .input {
+    min-width: 0;
+  }
+}
+
+.profileName {
+  margin: 0 0 0.2rem;
+  font-weight: 700;
+}
+
+.profileMeta {
+  margin-top: 0;
+}
+
+.appLoading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mainGray);
+  color: var(--mainBlue);
+  font-weight: 600;
+}
+
+/* Interruptor Modo oscuro (Ajustes) */
+.themeSwitch {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+  color: var(--mainBlack);
+}
+
+.themeSwitchInput {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.themeSwitchTrack {
+  position: relative;
+  width: 2.75rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--mainGray);
+  border: 1px solid color-mix(in srgb, var(--mainBlue) 28%, transparent);
+  flex-shrink: 0;
+  transition: background 0.2s ease;
+}
+
+.themeSwitchTrack::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(1.5rem - 6px);
+  height: calc(1.5rem - 6px);
+  border-radius: 50%;
+  background: #f7fafc;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+  transition: transform 0.2s ease;
+}
+
+.themeSwitchInput:checked + .themeSwitchTrack {
+  background: var(--mainBlue);
+}
+
+.themeSwitchInput:checked + .themeSwitchTrack::after {
+  transform: translateX(1.25rem);
+}
+
+.themeSwitchInput:focus-visible + .themeSwitchTrack {
+  outline: 2px solid var(--mainBlue);
+  outline-offset: 2px;
+}
+
+.themeSwitchLabel {
+  font-size: 0.95rem;
+}

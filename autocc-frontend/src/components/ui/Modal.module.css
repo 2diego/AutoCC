@@ -1,0 +1,125 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--modalBackdrop);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 0;
+  animation: fadeIn 0.16s ease-out;
+}
+
+.backdropStack {
+  z-index: 1100;
+}
+
+@media (min-width: 768px) {
+  .backdrop {
+    align-items: center;
+    padding: var(--space-6);
+  }
+}
+
+.panel {
+  width: 100%;
+  min-height: 100%;
+  max-height: 100%;
+  background: var(--mainWhite);
+  color: var(--mainBlack);
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-strong);
+  animation: slideUpIn 0.2s ease-out;
+}
+
+@media (min-width: 768px) {
+  .panel {
+    min-height: auto;
+    max-height: min(90vh, 720px);
+    width: min(100%, 520px);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--mainGray);
+  }
+
+  .panelWide {
+    width: min(100%, 720px);
+    max-height: min(92vh, 880px);
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--mainGray);
+  flex-shrink: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--mainBlue);
+}
+
+.closeBtn {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  line-height: 1;
+  background: transparent;
+  color: var(--lightBlue);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.closeBtn:hover {
+  background: var(--mainGray);
+  color: var(--mainBlue);
+}
+
+.closeBtn:focus-visible {
+  outline: 2px solid var(--focusRing);
+  outline-offset: 2px;
+}
+
+.body {
+  padding: var(--space-4);
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.footer {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--mainGray);
+  flex-shrink: 0;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUpIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
