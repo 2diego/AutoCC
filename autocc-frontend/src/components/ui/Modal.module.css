@@ -10,6 +10,10 @@
   animation: fadeIn 0.16s ease-out;
 }
 
+.backdropStack {
+  z-index: 1100;
+}
+
 @media (min-width: 768px) {
   .backdrop {
     align-items: center;

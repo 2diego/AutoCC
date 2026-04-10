@@ -10,6 +10,10 @@ type ModalProps = {
   footer?: ReactNode
   /** Ancho máximo en desktop (default panel estrecho para formularios) */
   size?: 'default' | 'wide'
+  /** Se muestra por encima de otro modal (p. ej. confirmación). */
+  stack?: boolean
+  /** Si es false, Escape no cierra (útil cuando hay modal apilado). */
+  closeOnEscape?: boolean
 }
 
 export function Modal({
@@ -19,13 +23,17 @@ export function Modal({
   children,
   footer,
   size = 'default',
+  stack = false,
+  closeOnEscape = true,
 }: ModalProps) {
   const titleId = useId()
 
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape' || !closeOnEscape) return
+      e.preventDefault()
+      onClose()
     }
     window.addEventListener('keydown', onKey)
     const prev = document.body.style.overflow
@@ -34,13 +42,13 @@ export function Modal({
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = prev
     }
-  }, [open, onClose])
+  }, [open, onClose, closeOnEscape])
 
   if (!open) return null
 
   return createPortal(
     <div
-      className={styles.backdrop}
+      className={stack ? `${styles.backdrop} ${styles.backdropStack}` : styles.backdrop}
       role="presentation"
       onClick={onClose}
     >

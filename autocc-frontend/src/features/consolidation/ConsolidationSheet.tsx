@@ -19,6 +19,12 @@ type ConsolidationSheetProps = {
   onClose: () => void
 }
 
+type DateMismatchPrompt = {
+  mode: 'add' | 'remove'
+  parsedDateFromFile?: string
+  userDate?: string
+}
+
 type DocumentsSheetStep = 'menu' | 'add' | 'remove' | 'download'
 
 const MODAL_TITLE: Record<DocumentsSheetStep, string> = {
@@ -60,6 +66,8 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
   const [removeResult, setRemoveResult] =
     useState<RemoveDocumentsFromErpResponse | null>(null)
   const [error, setError] = useState('')
+  const [dateMismatchPrompt, setDateMismatchPrompt] =
+    useState<DateMismatchPrompt | null>(null)
   const [excelDownloadKind, setExcelDownloadKind] = useState<
     null | 'current' | 'backup'
   >(null)
@@ -71,6 +79,7 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
       setExcelDownloadKind(null)
       setResult(null)
       setRemoveResult(null)
+      setDateMismatchPrompt(null)
     }
   }, [open])
 
@@ -78,6 +87,7 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
     setResult(null)
     setRemoveResult(null)
     setError('')
+    setDateMismatchPrompt(null)
   }
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -177,6 +187,67 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
     setResult(data)
   }
 
+  const confirmDateMismatchAndRetry = async () => {
+    if (!dateMismatchPrompt || !token) return
+    const { mode } = dateMismatchPrompt
+    setDateMismatchPrompt(null)
+    if (mode === 'add') {
+      if (!baseFile || !erpFile) return
+      setIsSubmitting(true)
+      setError('')
+      try {
+        await runAddDocuments(true)
+      } catch (e2) {
+        if (
+          e2 instanceof ConsolidationRequestError &&
+          e2.payload?.code === 'ERP_FILE_DATE_MISMATCH'
+        ) {
+          setDateMismatchPrompt({
+            mode: 'add',
+            parsedDateFromFile: e2.payload.parsedDateFromFile,
+            userDate: e2.payload.userDate,
+          })
+        } else {
+          setError(
+            e2 instanceof Error
+              ? e2.message
+              : 'Error al agregar documentos desde el ERP',
+          )
+          handleSessionError(e2 instanceof Error ? e2.message : '')
+        }
+      } finally {
+        setIsSubmitting(false)
+      }
+    } else {
+      if (!removeBaseFile || !removeErpFile) return
+      setIsRemoveSubmitting(true)
+      setError('')
+      try {
+        await runRemoveDocuments(true)
+      } catch (e2) {
+        if (
+          e2 instanceof ConsolidationRequestError &&
+          e2.payload?.code === 'ERP_FILE_DATE_MISMATCH'
+        ) {
+          setDateMismatchPrompt({
+            mode: 'remove',
+            parsedDateFromFile: e2.payload.parsedDateFromFile,
+            userDate: e2.payload.userDate,
+          })
+        } else {
+          setError(
+            e2 instanceof Error
+              ? e2.message
+              : 'Error al eliminar documentos desde el ERP',
+          )
+          handleSessionError(e2 instanceof Error ? e2.message : '')
+        }
+      } finally {
+        setIsRemoveSubmitting(false)
+      }
+    }
+  }
+
   const onSubmitAddDocumentsFromErp = async (
     event: FormEvent<HTMLFormElement>,
   ) => {
@@ -195,25 +266,11 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
         e instanceof ConsolidationRequestError &&
         e.payload?.code === 'ERP_FILE_DATE_MISMATCH'
       ) {
-        const parsed = e.payload.parsedDateFromFile
-        const user = e.payload.userDate
-        const ok = window.confirm(
-          `El archivo ERP declara fecha ${parsed ?? '(desconocida)'} y vos ingresaste ${user ?? addErpEmisionDate}. ¿Continuar de todos modos?`,
-        )
-        if (ok) {
-          try {
-            await runAddDocuments(true)
-          } catch (e2) {
-            setError(
-              e2 instanceof Error
-                ? e2.message
-                : 'Error al agregar documentos desde el ERP',
-            )
-            handleSessionError(
-              e2 instanceof Error ? e2.message : '',
-            )
-          }
-        }
+        setDateMismatchPrompt({
+          mode: 'add',
+          parsedDateFromFile: e.payload.parsedDateFromFile,
+          userDate: e.payload.userDate,
+        })
       } else {
         setError(
           e instanceof Error ? e.message : 'Error al agregar documentos desde el ERP',
@@ -257,25 +314,11 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
         e instanceof ConsolidationRequestError &&
         e.payload?.code === 'ERP_FILE_DATE_MISMATCH'
       ) {
-        const parsed = e.payload.parsedDateFromFile
-        const user = e.payload.userDate
-        const ok = window.confirm(
-          `El archivo ERP declara fecha ${parsed ?? '(desconocida)'} y vos ingresaste ${user ?? removeErpEmisionDate}. ¿Continuar de todos modos?`,
-        )
-        if (ok) {
-          try {
-            await runRemoveDocuments(true)
-          } catch (e2) {
-            setError(
-              e2 instanceof Error
-                ? e2.message
-                : 'Error al eliminar documentos desde el ERP',
-            )
-            handleSessionError(
-              e2 instanceof Error ? e2.message : '',
-            )
-          }
-        }
+        setDateMismatchPrompt({
+          mode: 'remove',
+          parsedDateFromFile: e.payload.parsedDateFromFile,
+          userDate: e.payload.userDate,
+        })
       } else {
         setError(
           e instanceof Error
@@ -290,11 +333,13 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
   }
 
   return (
+    <>
     <Modal
       open={open}
       title={MODAL_TITLE[step]}
       onClose={onClose}
       size="wide"
+      closeOnEscape={dateMismatchPrompt === null}
       footer={
         <p className="muted" style={{ margin: 0, textAlign: 'center' }}>
           {MODAL_FOOTER[step]}
@@ -674,5 +719,67 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
         </section>
       ) : null}
     </Modal>
+
+    <Modal
+      open={dateMismatchPrompt !== null}
+      stack
+      title="Fecha de emisión distinta"
+      onClose={() => setDateMismatchPrompt(null)}
+      size="default"
+    >
+      <div className="dateMismatchPanel">
+        <p className="muted sectionHint" style={{ marginTop: 0 }}>
+          El archivo ERP declara una fecha distinta a la &quot;fecha de emisión&quot;
+          que ingresaste. Revisá los valores y decidí si querés continuar.
+        </p>
+        <dl className="dateMismatchGrid">
+          <div>
+            <dt>Fecha en el archivo</dt>
+            <dd>
+              {dateMismatchPrompt?.parsedDateFromFile ?? '—'}
+            </dd>
+          </div>
+          <div>
+            <dt>Tu fecha de emisión</dt>
+            <dd>
+              {dateMismatchPrompt?.userDate ?? '—'}
+            </dd>
+          </div>
+        </dl>
+        <p className="muted sectionHint">
+          {dateMismatchPrompt?.mode === 'remove'
+            ? 'Si continuás, se usará tu fecha como corte para eliminar documentos.'
+            : 'Si continuás, se registrará la consolidación con tu fecha de emisión.'}
+        </p>
+        <div className="dateMismatchActions">
+          <button
+            type="button"
+            className="btn btnSecondary"
+            onClick={() => setDateMismatchPrompt(null)}
+          >
+            Volver y corregir
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={
+              dateMismatchPrompt?.mode === 'add'
+                ? !token || isSubmitting
+                : !token || isRemoveSubmitting
+            }
+            onClick={() => void confirmDateMismatchAndRetry()}
+          >
+            {dateMismatchPrompt?.mode === 'add'
+              ? isSubmitting
+                ? 'Procesando…'
+                : 'Continuar igual'
+              : isRemoveSubmitting
+                ? 'Procesando…'
+                : 'Continuar igual'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+    </>
   )
 }
