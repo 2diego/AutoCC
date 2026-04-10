@@ -1,14 +1,15 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import {
   addDocumentsFromErpRequest,
+  ConsolidationRequestError,
   downloadBackupExcel,
   downloadCurrentExcel,
-  removeDocumentsWithMatrixRequest,
+  removeDocumentsFromErpRequest,
 } from '../../api/consolidationApi'
 import type {
   AddDocumentsFromErpResponse,
   ErpSource,
-  RemoveDocumentsWithMatrixResponse,
+  RemoveDocumentsFromErpResponse,
 } from '../../api/types'
 import { Modal } from '../../components/ui/Modal'
 import { useAuth } from '../../context/useAuth'
@@ -42,15 +43,22 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
   const [step, setStep] = useState<DocumentsSheetStep>('menu')
   const [erpSource, setErpSource] = useState<ErpSource>('CEOS')
   const [downloadErpSource, setDownloadErpSource] = useState<ErpSource>('CEOS')
+  const todayIso = () => new Date().toISOString().slice(0, 10)
+  const [addBaseActualizacionDate, setAddBaseActualizacionDate] =
+    useState(todayIso)
+  const [addErpEmisionDate, setAddErpEmisionDate] = useState(todayIso)
+  const [removeBaseActualizacionDate, setRemoveBaseActualizacionDate] =
+    useState(todayIso)
+  const [removeErpEmisionDate, setRemoveErpEmisionDate] = useState(todayIso)
   const [baseFile, setBaseFile] = useState<File | null>(null)
   const [erpFile, setErpFile] = useState<File | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [result, setResult] = useState<AddDocumentsFromErpResponse | null>(null)
-  const [matrixBaseFile, setMatrixBaseFile] = useState<File | null>(null)
-  const [matrixFile, setMatrixFile] = useState<File | null>(null)
-  const [isMatrixSubmitting, setIsMatrixSubmitting] = useState(false)
-  const [matrixResult, setMatrixResult] =
-    useState<RemoveDocumentsWithMatrixResponse | null>(null)
+  const [removeBaseFile, setRemoveBaseFile] = useState<File | null>(null)
+  const [removeErpFile, setRemoveErpFile] = useState<File | null>(null)
+  const [isRemoveSubmitting, setIsRemoveSubmitting] = useState(false)
+  const [removeResult, setRemoveResult] =
+    useState<RemoveDocumentsFromErpResponse | null>(null)
   const [error, setError] = useState('')
   const [excelDownloadKind, setExcelDownloadKind] = useState<
     null | 'current' | 'backup'
@@ -62,13 +70,13 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
       setError('')
       setExcelDownloadKind(null)
       setResult(null)
-      setMatrixResult(null)
+      setRemoveResult(null)
     }
   }, [open])
 
   const resetOperationResults = () => {
     setResult(null)
-    setMatrixResult(null)
+    setRemoveResult(null)
     setError('')
   }
 
@@ -155,61 +163,129 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
     </section>
   )
 
+  const runAddDocuments = async (confirmFileDateMismatch: boolean) => {
+    if (!token || !baseFile || !erpFile) return
+    const data = await addDocumentsFromErpRequest(
+      token,
+      erpSource,
+      addBaseActualizacionDate,
+      addErpEmisionDate,
+      baseFile,
+      erpFile,
+      confirmFileDateMismatch,
+    )
+    setResult(data)
+  }
+
   const onSubmitAddDocumentsFromErp = async (
     event: FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault()
     if (!token || !baseFile || !erpFile) {
-      setError('Seleccioná ambos archivos CSV.')
+      setError('Seleccioná ambos archivos CSV y las fechas.')
       return
     }
     setIsSubmitting(true)
     setError('')
     setResult(null)
     try {
-      const data = await addDocumentsFromErpRequest(
-        token,
-        erpSource,
-        baseFile,
-        erpFile,
-      )
-      setResult(data)
+      await runAddDocuments(false)
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : 'Error al agregar documentos desde el ERP',
-      )
+      if (
+        e instanceof ConsolidationRequestError &&
+        e.payload?.code === 'ERP_FILE_DATE_MISMATCH'
+      ) {
+        const parsed = e.payload.parsedDateFromFile
+        const user = e.payload.userDate
+        const ok = window.confirm(
+          `El archivo ERP declara fecha ${parsed ?? '(desconocida)'} y vos ingresaste ${user ?? addErpEmisionDate}. ¿Continuar de todos modos?`,
+        )
+        if (ok) {
+          try {
+            await runAddDocuments(true)
+          } catch (e2) {
+            setError(
+              e2 instanceof Error
+                ? e2.message
+                : 'Error al agregar documentos desde el ERP',
+            )
+            handleSessionError(
+              e2 instanceof Error ? e2.message : '',
+            )
+          }
+        }
+      } else {
+        setError(
+          e instanceof Error ? e.message : 'Error al agregar documentos desde el ERP',
+        )
+        handleSessionError(e instanceof Error ? e.message : '')
+      }
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const onSubmitRemoveDocumentsWithMatrix = async (
+  const runRemoveDocuments = async (confirmFileDateMismatch: boolean) => {
+    if (!token || !removeBaseFile || !removeErpFile) return
+    const data = await removeDocumentsFromErpRequest(
+      token,
+      erpSource,
+      removeBaseActualizacionDate,
+      removeErpEmisionDate,
+      removeBaseFile,
+      removeErpFile,
+      confirmFileDateMismatch,
+    )
+    setRemoveResult(data)
+  }
+
+  const onSubmitRemoveDocumentsFromErp = async (
     event: FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault()
-    if (!token || !matrixBaseFile || !matrixFile) {
-      setError('Seleccioná archivo base y archivo de casa matriz.')
+    if (!token || !removeBaseFile || !removeErpFile) {
+      setError('Seleccioná ambos archivos CSV y las fechas.')
       return
     }
-    setIsMatrixSubmitting(true)
+    setIsRemoveSubmitting(true)
     setError('')
-    setMatrixResult(null)
+    setRemoveResult(null)
     try {
-      const data = await removeDocumentsWithMatrixRequest(
-        token,
-        erpSource,
-        matrixBaseFile,
-        matrixFile,
-      )
-      setMatrixResult(data)
+      await runRemoveDocuments(false)
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : 'Error al eliminar documentos con matriz',
-      )
+      if (
+        e instanceof ConsolidationRequestError &&
+        e.payload?.code === 'ERP_FILE_DATE_MISMATCH'
+      ) {
+        const parsed = e.payload.parsedDateFromFile
+        const user = e.payload.userDate
+        const ok = window.confirm(
+          `El archivo ERP declara fecha ${parsed ?? '(desconocida)'} y vos ingresaste ${user ?? removeErpEmisionDate}. ¿Continuar de todos modos?`,
+        )
+        if (ok) {
+          try {
+            await runRemoveDocuments(true)
+          } catch (e2) {
+            setError(
+              e2 instanceof Error
+                ? e2.message
+                : 'Error al eliminar documentos desde el ERP',
+            )
+            handleSessionError(
+              e2 instanceof Error ? e2.message : '',
+            )
+          }
+        }
+      } else {
+        setError(
+          e instanceof Error
+            ? e.message
+            : 'Error al eliminar documentos desde el ERP',
+        )
+        handleSessionError(e instanceof Error ? e.message : '')
+      }
     } finally {
-      setIsMatrixSubmitting(false)
+      setIsRemoveSubmitting(false)
     }
   }
 
@@ -317,6 +393,19 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
                 />
               </label>
               <label className="fieldLabel">
+                Fecha de actualización del archivo base
+                <input
+                  className="input"
+                  type="date"
+                  value={addBaseActualizacionDate}
+                  onChange={(e) => {
+                    setAddBaseActualizacionDate(e.target.value)
+                    resetOperationResults()
+                  }}
+                  required
+                />
+              </label>
+              <label className="fieldLabel">
                 Archivo ERP (.csv)
                 <input
                   className="input"
@@ -324,6 +413,19 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
                   accept=".csv"
                   onChange={(e) => {
                     setErpFile(e.target.files?.[0] ?? null)
+                    resetOperationResults()
+                  }}
+                  required
+                />
+              </label>
+              <label className="fieldLabel">
+                Fecha de emisión del archivo ERP
+                <input
+                  className="input"
+                  type="date"
+                  value={addErpEmisionDate}
+                  onChange={(e) => {
+                    setAddErpEmisionDate(e.target.value)
                     resetOperationResults()
                   }}
                   required
@@ -403,7 +505,7 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
               Quita del base los documentos anteriores a la fecha de corte de matriz
               que no figuren en el listado de casa matriz (CEOS o TOTVS).
             </p>
-            <form className="formGrid" onSubmit={onSubmitRemoveDocumentsWithMatrix}>
+            <form className="formGrid" onSubmit={onSubmitRemoveDocumentsFromErp}>
               <label className="fieldLabel">
                 ERP
                 <select
@@ -425,7 +527,20 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
                   type="file"
                   accept=".csv"
                   onChange={(e) => {
-                    setMatrixBaseFile(e.target.files?.[0] ?? null)
+                    setRemoveBaseFile(e.target.files?.[0] ?? null)
+                    resetOperationResults()
+                  }}
+                  required
+                />
+              </label>
+              <label className="fieldLabel">
+                Fecha de actualización del archivo base
+                <input
+                  className="input"
+                  type="date"
+                  value={removeBaseActualizacionDate}
+                  onChange={(e) => {
+                    setRemoveBaseActualizacionDate(e.target.value)
                     resetOperationResults()
                   }}
                   required
@@ -438,7 +553,20 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
                   type="file"
                   accept=".csv"
                   onChange={(e) => {
-                    setMatrixFile(e.target.files?.[0] ?? null)
+                    setRemoveErpFile(e.target.files?.[0] ?? null)
+                    resetOperationResults()
+                  }}
+                  required
+                />
+              </label>
+              <label className="fieldLabel">
+                Fecha de emisión del archivo ERP (corte para eliminar)
+                <input
+                  className="input"
+                  type="date"
+                  value={removeErpEmisionDate}
+                  onChange={(e) => {
+                    setRemoveErpEmisionDate(e.target.value)
                     resetOperationResults()
                   }}
                   required
@@ -447,33 +575,33 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
               <button
                 type="submit"
                 className="btn"
-                disabled={!token || isMatrixSubmitting}
+                disabled={!token || isRemoveSubmitting}
               >
-                {isMatrixSubmitting
+                {isRemoveSubmitting
                   ? 'Eliminando…'
                   : 'Eliminar documentos'}
               </button>
             </form>
           </section>
 
-          {matrixResult ? (
+          {removeResult ? (
             <>
               <section className="surfaceSection">
-                <h3 className="sectionTitle">Resultado eliminación con matriz</h3>
+                <h3 className="sectionTitle">Resultado eliminación</h3>
                 <p className="muted">
-                  Fecha de corte detectada:{' '}
-                  <strong>{matrixResult.matrixCutoffDate}</strong>
+                  Fecha de emisión usada como corte:{' '}
+                  <strong>{removeResult.erpEmisionDate}</strong>
                 </p>
                 <div className="statGrid">
-                  <p className="statItem">Base: {matrixResult.stats.baseDocs}</p>
-                  <p className="statItem">Matriz: {matrixResult.stats.erpDocs}</p>
+                  <p className="statItem">Base: {removeResult.stats.baseDocs}</p>
+                  <p className="statItem">ERP: {removeResult.stats.erpDocs}</p>
                   <p className="statItem">
-                    Mantenidos: {matrixResult.stats.keptDocs}
+                    Mantenidos: {removeResult.stats.keptDocs}
                   </p>
                   <p className="statItem">
-                    Eliminados: {matrixResult.stats.removedDocs}
+                    Eliminados: {removeResult.stats.removedDocs}
                   </p>
-                  <p className="statItem">Errores: {matrixResult.stats.errors}</p>
+                  <p className="statItem">Errores: {removeResult.stats.errors}</p>
                 </div>
               </section>
 
@@ -482,16 +610,16 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
               <section className="surfaceSection">
                 <h3 className="sectionTitle">Vista previa (documentos eliminados)</h3>
                 <pre className="preJson">
-                  {JSON.stringify(matrixResult.previewRemoved, null, 2)}
+                  {JSON.stringify(removeResult.previewRemoved, null, 2)}
                 </pre>
               </section>
 
-              {matrixResult.previewErrors &&
-              matrixResult.previewErrors.length > 0 ? (
+              {removeResult.previewErrors &&
+              removeResult.previewErrors.length > 0 ? (
                 <section className="surfaceSection">
-                  <h3 className="sectionTitle">Errores de parseo (matriz, muestra)</h3>
+                  <h3 className="sectionTitle">Errores de parseo ERP (muestra)</h3>
                   <pre className="preJson">
-                    {JSON.stringify(matrixResult.previewErrors, null, 2)}
+                    {JSON.stringify(removeResult.previewErrors, null, 2)}
                   </pre>
                 </section>
               ) : null}

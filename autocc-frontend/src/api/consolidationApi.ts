@@ -2,16 +2,39 @@ import { getApiBaseUrl } from './config'
 import type {
   AddDocumentsFromErpResponse,
   ErpSource,
-  RemoveDocumentsWithMatrixResponse,
+  RemoveDocumentsFromErpResponse,
 } from './types'
 
-async function readApiError(response: Response, fallback: string): Promise<never> {
+export type ApiErrorPayload = {
+  statusCode?: number
+  message?: string | string[]
+  code?: string
+  userDate?: string
+  parsedDateFromFile?: string
+}
+
+export class ConsolidationRequestError extends Error {
+  readonly payload: ApiErrorPayload | undefined
+
+  constructor(message: string, payload?: ApiErrorPayload) {
+    super(message)
+    this.name = 'ConsolidationRequestError'
+    this.payload = payload
+  }
+}
+
+async function readApiError(
+  response: Response,
+  fallback: string,
+): Promise<never> {
   let message = fallback
+  let payload: ApiErrorPayload | undefined
   try {
     const text = await response.text()
     if (text) {
       try {
-        const parsed = JSON.parse(text) as { message?: string | string[] }
+        const parsed = JSON.parse(text) as ApiErrorPayload
+        payload = parsed
         if (Array.isArray(parsed.message)) {
           message = parsed.message.join(', ')
         } else if (typeof parsed.message === 'string') {
@@ -28,19 +51,30 @@ async function readApiError(response: Response, fallback: string): Promise<never
   }
 
   if (response.status === 401) {
-    throw new Error('Sesión vencida o inválida. Volvé a iniciar sesión.')
+    throw new ConsolidationRequestError(
+      'Sesión vencida o inválida. Volvé a iniciar sesión.',
+      payload,
+    )
   }
-  throw new Error(message)
+  throw new ConsolidationRequestError(message, payload)
 }
 
 export async function addDocumentsFromErpRequest(
   token: string,
   erpSource: ErpSource,
+  baseActualizacionDate: string,
+  erpEmisionDate: string,
   baseFile: File,
   erpFile: File,
+  confirmFileDateMismatch = false,
 ): Promise<AddDocumentsFromErpResponse> {
   const formData = new FormData()
   formData.append('erpSource', erpSource)
+  formData.append('baseActualizacionDate', baseActualizacionDate)
+  formData.append('erpEmisionDate', erpEmisionDate)
+  if (confirmFileDateMismatch) {
+    formData.append('confirmFileDateMismatch', 'true')
+  }
   formData.append('baseFile', baseFile)
   formData.append('erpFile', erpFile)
 
@@ -58,19 +92,27 @@ export async function addDocumentsFromErpRequest(
   return (await response.json()) as AddDocumentsFromErpResponse
 }
 
-export async function removeDocumentsWithMatrixRequest(
+export async function removeDocumentsFromErpRequest(
   token: string,
   erpSource: ErpSource,
+  baseActualizacionDate: string,
+  erpEmisionDate: string,
   baseFile: File,
-  matrixFile: File,
-): Promise<RemoveDocumentsWithMatrixResponse> {
+  erpFile: File,
+  confirmFileDateMismatch = false,
+): Promise<RemoveDocumentsFromErpResponse> {
   const formData = new FormData()
   formData.append('erpSource', erpSource)
+  formData.append('baseActualizacionDate', baseActualizacionDate)
+  formData.append('erpEmisionDate', erpEmisionDate)
+  if (confirmFileDateMismatch) {
+    formData.append('confirmFileDateMismatch', 'true')
+  }
   formData.append('baseFile', baseFile)
-  formData.append('matrixFile', matrixFile)
+  formData.append('erpFile', erpFile)
 
   const response = await fetch(
-    `${getApiBaseUrl()}/consolidations/remove-documents-with-matrix`,
+    `${getApiBaseUrl()}/consolidations/remove-documents-from-erp`,
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
@@ -80,10 +122,10 @@ export async function removeDocumentsWithMatrixRequest(
   if (!response.ok) {
     await readApiError(
       response,
-      'No se pudieron eliminar documentos según la casa matriz',
+      'No se pudieron eliminar documentos según el listado ERP',
     )
   }
-  return (await response.json()) as RemoveDocumentsWithMatrixResponse
+  return (await response.json()) as RemoveDocumentsFromErpResponse
 }
 
 export async function downloadCurrentExcel(

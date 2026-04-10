@@ -27,6 +27,8 @@ export type AddDocumentsFromErpResponse = {
   consolidationId: number
   erpSource: ErpSource
   status: string
+  baseActualizacionDate: string
+  erpEmisionDate: string
   stats: AddDocumentsFromErpStats
   previewAdded: Array<{
     clienteId: string
@@ -57,11 +59,12 @@ export type AddDocumentsFromErpResponse = {
   }>
 }
 
-export type RemoveDocumentsWithMatrixResponse = {
+export type RemoveDocumentsFromErpResponse = {
   consolidationId: number
   erpSource: ErpSource
   status: string
-  matrixCutoffDate: string
+  baseActualizacionDate: string
+  erpEmisionDate: string
   stats: {
     baseDocs: number
     erpDocs: number
