@@ -156,7 +156,7 @@
 
 .sectionTitle {
   margin: 0 0 0.45rem;
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
   color: var(--lightBlue);
 }
 
@@ -168,6 +168,60 @@
   display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+.sheetBackRow {
+  margin-bottom: var(--space-3);
+}
+
+.documentHub {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.documentHubCard {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  border: 1px solid color-mix(in srgb, var(--mainBlue) 18%, var(--mainGray));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--mainWhite) 96%, var(--mainGray));
+  padding: var(--space-4) var(--space-3);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.12s ease;
+}
+
+.documentHubCard:hover {
+  border-color: color-mix(in srgb, var(--mainBlue) 35%, var(--mainGray));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--shadowElevated) 18%, transparent);
+}
+
+.documentHubCard:active {
+  transform: translateY(1px);
+}
+
+.documentHubCard:focus-visible {
+  outline: 2px solid var(--focusRing);
+  outline-offset: 2px;
+}
+
+.documentHubCardTitle {
+  margin: 0 0 0.35rem;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--mainBlue);
+}
+
+.documentHubCardDesc {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--lightBlue);
+  line-height: 1.4;
 }
 
 @media (max-width: 640px) {

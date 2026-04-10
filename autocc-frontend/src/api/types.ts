@@ -14,24 +14,67 @@ export type LoginResponse = {
   user: AuthUser
 }
 
-export type ConsolidationStats = {
+export type AddDocumentsFromErpStats = {
   baseDocs: number
   erpDocs: number
   keptDocs: number
   addedDocs: number
+  removedDocs?: number
   errors: number
 }
 
-export type ConsolidationResponse = {
+export type AddDocumentsFromErpResponse = {
   consolidationId: number
   erpSource: ErpSource
   status: string
-  stats: ConsolidationStats
+  stats: AddDocumentsFromErpStats
   previewAdded: Array<{
     clienteId: string
     tienda: string
     tipoDocumento: string
     numeroDocumento: string
+  }>
+  previewCurrent: Array<{
+    clienteId: string
+    tienda: string
+    tipoDocumento: string
+    numeroDocumento: string
+    saldo: string | null
+    observaciones: string | null
+  }>
+  previewRemoved?: Array<{
+    clienteId: string
+    tienda: string
+    tipoDocumento: string
+    numeroDocumento: string
+    fechaDoc: string | null
+  }>
+  previewErrors?: Array<{
+    sourceFile: string
+    lineNumber: number
+    errorCode: string
+    message: string
+  }>
+}
+
+export type RemoveDocumentsWithMatrixResponse = {
+  consolidationId: number
+  erpSource: ErpSource
+  status: string
+  matrixCutoffDate: string
+  stats: {
+    baseDocs: number
+    erpDocs: number
+    keptDocs: number
+    removedDocs: number
+    errors: number
+  }
+  previewRemoved: Array<{
+    clienteId: string
+    tienda: string
+    tipoDocumento: string
+    numeroDocumento: string
+    fechaDoc: string | null
   }>
   previewCurrent: Array<{
     clienteId: string

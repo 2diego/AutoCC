@@ -1,5 +1,9 @@
 import { getApiBaseUrl } from './config'
-import type { ConsolidationResponse, ErpSource } from './types'
+import type {
+  AddDocumentsFromErpResponse,
+  ErpSource,
+  RemoveDocumentsWithMatrixResponse,
+} from './types'
 
 async function readApiError(response: Response, fallback: string): Promise<never> {
   let message = fallback
@@ -29,36 +33,69 @@ async function readApiError(response: Response, fallback: string): Promise<never
   throw new Error(message)
 }
 
-export async function runConsolidationRequest(
+export async function addDocumentsFromErpRequest(
   token: string,
   erpSource: ErpSource,
   baseFile: File,
   erpFile: File,
-): Promise<ConsolidationResponse> {
+): Promise<AddDocumentsFromErpResponse> {
   const formData = new FormData()
   formData.append('erpSource', erpSource)
   formData.append('baseFile', baseFile)
   formData.append('erpFile', erpFile)
 
-  const response = await fetch(`${getApiBaseUrl()}/consolidations/run`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  })
+  const response = await fetch(
+    `${getApiBaseUrl()}/consolidations/add-documents-from-erp`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    },
+  )
   if (!response.ok) {
-    await readApiError(response, 'No se pudo ejecutar la consolidación')
+    await readApiError(response, 'No se pudieron agregar documentos desde el ERP')
   }
-  return (await response.json()) as ConsolidationResponse
+  return (await response.json()) as AddDocumentsFromErpResponse
+}
+
+export async function removeDocumentsWithMatrixRequest(
+  token: string,
+  erpSource: ErpSource,
+  baseFile: File,
+  matrixFile: File,
+): Promise<RemoveDocumentsWithMatrixResponse> {
+  const formData = new FormData()
+  formData.append('erpSource', erpSource)
+  formData.append('baseFile', baseFile)
+  formData.append('matrixFile', matrixFile)
+
+  const response = await fetch(
+    `${getApiBaseUrl()}/consolidations/remove-documents-with-matrix`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    },
+  )
+  if (!response.ok) {
+    await readApiError(
+      response,
+      'No se pudieron eliminar documentos según la casa matriz',
+    )
+  }
+  return (await response.json()) as RemoveDocumentsWithMatrixResponse
 }
 
 export async function downloadCurrentExcel(
   token: string,
   erpSource: ErpSource,
 ): Promise<Blob> {
+  const bust = Date.now()
   const response = await fetch(
-    `${getApiBaseUrl()}/exports/${erpSource}/current.xlsx`,
+    `${getApiBaseUrl()}/exports/${erpSource}/current.xlsx?t=${bust}`,
     {
       headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
     },
   )
   if (!response.ok) {
@@ -71,10 +108,12 @@ export async function downloadBackupExcel(
   token: string,
   erpSource: ErpSource,
 ): Promise<Blob> {
+  const bust = Date.now()
   const response = await fetch(
-    `${getApiBaseUrl()}/exports/${erpSource}/backup.xlsx`,
+    `${getApiBaseUrl()}/exports/${erpSource}/backup.xlsx?t=${bust}`,
     {
       headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
     },
   )
   if (!response.ok) {
