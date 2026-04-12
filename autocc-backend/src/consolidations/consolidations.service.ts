@@ -24,6 +24,7 @@ import {
 import { AddDocumentsFromErpDto } from './dto/add-documents-from-erp.dto';
 import { FullConsolidationFromErpDto } from './dto/full-consolidation-from-erp.dto';
 import { RemoveDocumentsFromErpDto } from './dto/remove-documents-from-erp.dto';
+import { decodeUploadBufferToUtf8String } from '../common/utils/decode-upload-buffer.util';
 
 @Injectable()
 export class ConsolidationsService {
@@ -177,8 +178,8 @@ export class ConsolidationsService {
     );
 
     try {
-      const baseContent = baseFile.buffer.toString('utf-8');
-      const erpContent = erpFile.buffer.toString('utf-8');
+      const baseContent = decodeUploadBufferToUtf8String(baseFile.buffer);
+      const erpContent = decodeUploadBufferToUtf8String(erpFile.buffer);
 
       const baseParsed = parseBaseFile(dto.erpSource, baseContent);
       const erpParsed = parseErpListingForDocumentAdd(
@@ -345,8 +346,8 @@ export class ConsolidationsService {
     );
 
     try {
-      const baseContent = baseFile.buffer.toString('utf-8');
-      const erpContent = erpFile.buffer.toString('utf-8');
+      const baseContent = decodeUploadBufferToUtf8String(baseFile.buffer);
+      const erpContent = decodeUploadBufferToUtf8String(erpFile.buffer);
 
       const cutoffDate = this.parseUserIsoDateToUtcMidnight(
         dto.fechaCorteEliminacion,
@@ -514,8 +515,8 @@ export class ConsolidationsService {
     );
 
     try {
-      const baseContent = baseFile.buffer.toString('utf-8');
-      const erpContent = erpFile.buffer.toString('utf-8');
+      const baseContent = decodeUploadBufferToUtf8String(baseFile.buffer);
+      const erpContent = decodeUploadBufferToUtf8String(erpFile.buffer);
 
       const cutoffDate = this.parseUserIsoDateToUtcMidnight(
         dto.fechaCorteEliminacion,

@@ -4,13 +4,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import { CreateCcCurrentDto } from './dto/create-cc-current.dto';
 import { UpdateCcCurrentDto } from './dto/update-cc-current.dto';
 import { CcCurrent } from './entities/cc-current.entity';
 import { DocumentNotesAudit } from '../document-notes-audit/entities/document-notes-audit.entity';
 import { UpdateDocumentNotesDto } from './dto/update-document-notes.dto';
 import { User } from '../users/entities/user.entity';
+
+/** Caracteres especiales de `LIKE` de MySQL. */
+const escapeMysqlLikePattern = (value: string): string =>
+  value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 
 @Injectable()
 export class CcCurrentService {
@@ -61,9 +65,26 @@ export class CcCurrentService {
       qb.andWhere('cc.tipoDocumento = :tipoDocumento', { tipoDocumento });
     }
     if (q) {
+      const like = `%${escapeMysqlLikePattern(q)}%`;
       qb.andWhere(
-        '(cc.numeroDocumento LIKE :q OR cc.observaciones LIKE :q OR cc.motivoDeuda LIKE :q)',
-        { q: `%${q}%` },
+        new Brackets((w) => {
+          w.where('cc.numeroDocumento LIKE :q ESCAPE :esc', {
+            q: like,
+            esc: '\\',
+          })
+            .orWhere('cc.observaciones LIKE :q ESCAPE :esc', {
+              q: like,
+              esc: '\\',
+            })
+            .orWhere('cc.motivoDeuda LIKE :q ESCAPE :esc', {
+              q: like,
+              esc: '\\',
+            })
+            .orWhere(
+              "JSON_UNQUOTE(JSON_EXTRACT(CAST(cc.rawRowJson AS JSON), '$.nombreCliente')) LIKE :q ESCAPE :esc",
+              { q: like, esc: '\\' },
+            );
+        }),
       );
     }
 
