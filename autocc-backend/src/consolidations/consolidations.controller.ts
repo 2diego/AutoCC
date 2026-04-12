@@ -14,6 +14,7 @@ import { appConfig } from '../config/app.config';
 import { ConsolidationsService } from './consolidations.service';
 import { AddDocumentsFromErpDto } from './dto/add-documents-from-erp.dto';
 import { RemoveDocumentsFromErpDto } from './dto/remove-documents-from-erp.dto';
+import { FullConsolidationFromErpDto } from './dto/full-consolidation-from-erp.dto';
 import { Roles } from '../common/auth/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
 
@@ -120,6 +121,58 @@ export class ConsolidationsController {
 
     return this.consolidationsService.removeDocumentsFromErp(
       removeDocumentsFromErpDto,
+      baseFile,
+      erpFile,
+    );
+  }
+
+  @Post('full-consolidation-from-erp')
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR)
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'baseFile', maxCount: 1 },
+        { name: 'erpFile', maxCount: 1 },
+      ],
+      {
+        limits: {
+          files: 2,
+          fileSize: appConfig.uploadMaxFileSizeBytes,
+        },
+      },
+    ),
+  )
+  fullConsolidationFromErp(
+    @Body() fullConsolidationFromErpDto: FullConsolidationFromErpDto,
+    @UploadedFiles()
+    files: {
+      baseFile?: Express.Multer.File[];
+      erpFile?: Express.Multer.File[];
+    },
+  ) {
+    const baseFile = files?.baseFile?.[0];
+    const erpFile = files?.erpFile?.[0];
+
+    if (!baseFile || !erpFile) {
+      throw new BadRequestException('baseFile y erpFile son obligatorios');
+    }
+
+    const isCsv = (file: Express.Multer.File) => {
+      const nameOk = file.originalname.toLowerCase().endsWith('.csv');
+      const mimeOk =
+        !file.mimetype ||
+        file.mimetype === 'text/csv' ||
+        file.mimetype === 'application/vnd.ms-excel' ||
+        file.mimetype === 'application/octet-stream';
+      return nameOk && mimeOk;
+    };
+
+    if (!isCsv(baseFile) || !isCsv(erpFile)) {
+      throw new BadRequestException('Solo se soportan archivos CSV');
+    }
+
+    return this.consolidationsService.fullConsolidationFromErp(
+      fullConsolidationFromErpDto,
       baseFile,
       erpFile,
     );

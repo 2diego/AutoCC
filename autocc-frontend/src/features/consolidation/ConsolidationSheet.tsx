@@ -1,14 +1,15 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import {
   addDocumentsFromErpRequest,
-  ConsolidationRequestError,
   downloadBackupExcel,
   downloadCurrentExcel,
+  fullConsolidationFromErpRequest,
   removeDocumentsFromErpRequest,
 } from '../../api/consolidationApi'
 import type {
   AddDocumentsFromErpResponse,
   ErpSource,
+  FullConsolidationFromErpResponse,
   RemoveDocumentsFromErpResponse,
 } from '../../api/types'
 import { Modal } from '../../components/ui/Modal'
@@ -19,27 +20,24 @@ type ConsolidationSheetProps = {
   onClose: () => void
 }
 
-type DateMismatchPrompt = {
-  mode: 'add' | 'remove'
-  parsedDateFromFile?: string
-  userDate?: string
-}
-
-type DocumentsSheetStep = 'menu' | 'add' | 'remove' | 'download'
+type DocumentsSheetStep = 'menu' | 'add' | 'remove' | 'full' | 'download'
 
 const MODAL_TITLE: Record<DocumentsSheetStep, string> = {
   menu: 'Consolidar',
   add: 'Agregar documentos',
   remove: 'Eliminar documentos',
+  full: 'Consolidación completa',
   download: 'Descargar documentos',
 }
 
 const MODAL_FOOTER: Record<DocumentsSheetStep, string> = {
   menu:
-    'Elegí una opción: incorporar o eliminar documentos de la cuenta corriente, o descargar Excel.',
+    'Incorporar, eliminar o consolidación completa con cuenta corriente + ERP, o descargar Excel.',
   add: 'Archivos CSV: cuenta corriente + archivo actualizado del ERP (CEOS o TOTVS).',
   remove:
     'Archivos CSV: cuenta corriente + archivo actualizado del ERP (CEOS o TOTVS).',
+  full:
+    'Un solo paso: mismo listado ERP histórico para sumar comprobantes nuevos y limpiar viejos según la fecha de corte.',
   download:
     'Elegí el ERP y descargá el Excel del snapshot actual o el backup del estado previo.',
 }
@@ -50,12 +48,8 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
   const [erpSource, setErpSource] = useState<ErpSource>('CEOS')
   const [downloadErpSource, setDownloadErpSource] = useState<ErpSource>('CEOS')
   const todayIso = () => new Date().toISOString().slice(0, 10)
-  const [addBaseActualizacionDate, setAddBaseActualizacionDate] =
-    useState(todayIso)
-  const [addErpEmisionDate, setAddErpEmisionDate] = useState(todayIso)
-  const [removeBaseActualizacionDate, setRemoveBaseActualizacionDate] =
-    useState(todayIso)
-  const [removeErpEmisionDate, setRemoveErpEmisionDate] = useState(todayIso)
+  const [removeFechaCorteEliminacion, setRemoveFechaCorteEliminacion] =
+    useState(todayIso())
   const [baseFile, setBaseFile] = useState<File | null>(null)
   const [erpFile, setErpFile] = useState<File | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -65,9 +59,14 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
   const [isRemoveSubmitting, setIsRemoveSubmitting] = useState(false)
   const [removeResult, setRemoveResult] =
     useState<RemoveDocumentsFromErpResponse | null>(null)
+  const [fullFechaCorteEliminacion, setFullFechaCorteEliminacion] =
+    useState(todayIso())
+  const [fullBaseFile, setFullBaseFile] = useState<File | null>(null)
+  const [fullErpFile, setFullErpFile] = useState<File | null>(null)
+  const [isFullSubmitting, setIsFullSubmitting] = useState(false)
+  const [fullResult, setFullResult] =
+    useState<FullConsolidationFromErpResponse | null>(null)
   const [error, setError] = useState('')
-  const [dateMismatchPrompt, setDateMismatchPrompt] =
-    useState<DateMismatchPrompt | null>(null)
   const [excelDownloadKind, setExcelDownloadKind] = useState<
     null | 'current' | 'backup'
   >(null)
@@ -79,15 +78,15 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
       setExcelDownloadKind(null)
       setResult(null)
       setRemoveResult(null)
-      setDateMismatchPrompt(null)
+      setFullResult(null)
     }
   }, [open])
 
   const resetOperationResults = () => {
     setResult(null)
     setRemoveResult(null)
+    setFullResult(null)
     setError('')
-    setDateMismatchPrompt(null)
   }
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -173,127 +172,33 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
     </section>
   )
 
-  const runAddDocuments = async (confirmFileDateMismatch: boolean) => {
-    if (!token || !baseFile || !erpFile) return
-    const data = await addDocumentsFromErpRequest(
-      token,
-      erpSource,
-      addBaseActualizacionDate,
-      addErpEmisionDate,
-      baseFile,
-      erpFile,
-      confirmFileDateMismatch,
-    )
-    setResult(data)
-  }
-
-  const confirmDateMismatchAndRetry = async () => {
-    if (!dateMismatchPrompt || !token) return
-    const { mode } = dateMismatchPrompt
-    setDateMismatchPrompt(null)
-    if (mode === 'add') {
-      if (!baseFile || !erpFile) return
-      setIsSubmitting(true)
-      setError('')
-      try {
-        await runAddDocuments(true)
-      } catch (e2) {
-        if (
-          e2 instanceof ConsolidationRequestError &&
-          e2.payload?.code === 'ERP_FILE_DATE_MISMATCH'
-        ) {
-          setDateMismatchPrompt({
-            mode: 'add',
-            parsedDateFromFile: e2.payload.parsedDateFromFile,
-            userDate: e2.payload.userDate,
-          })
-        } else {
-          setError(
-            e2 instanceof Error
-              ? e2.message
-              : 'Error al agregar documentos desde el ERP',
-          )
-          handleSessionError(e2 instanceof Error ? e2.message : '')
-        }
-      } finally {
-        setIsSubmitting(false)
-      }
-    } else {
-      if (!removeBaseFile || !removeErpFile) return
-      setIsRemoveSubmitting(true)
-      setError('')
-      try {
-        await runRemoveDocuments(true)
-      } catch (e2) {
-        if (
-          e2 instanceof ConsolidationRequestError &&
-          e2.payload?.code === 'ERP_FILE_DATE_MISMATCH'
-        ) {
-          setDateMismatchPrompt({
-            mode: 'remove',
-            parsedDateFromFile: e2.payload.parsedDateFromFile,
-            userDate: e2.payload.userDate,
-          })
-        } else {
-          setError(
-            e2 instanceof Error
-              ? e2.message
-              : 'Error al eliminar documentos desde el ERP',
-          )
-          handleSessionError(e2 instanceof Error ? e2.message : '')
-        }
-      } finally {
-        setIsRemoveSubmitting(false)
-      }
-    }
-  }
-
   const onSubmitAddDocumentsFromErp = async (
     event: FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault()
     if (!token || !baseFile || !erpFile) {
-      setError('Seleccioná ambos archivos CSV y las fechas.')
+      setError('Seleccioná ambos archivos CSV.')
       return
     }
     setIsSubmitting(true)
     setError('')
     setResult(null)
     try {
-      await runAddDocuments(false)
+      const data = await addDocumentsFromErpRequest(
+        token,
+        erpSource,
+        baseFile,
+        erpFile,
+      )
+      setResult(data)
     } catch (e) {
-      if (
-        e instanceof ConsolidationRequestError &&
-        e.payload?.code === 'ERP_FILE_DATE_MISMATCH'
-      ) {
-        setDateMismatchPrompt({
-          mode: 'add',
-          parsedDateFromFile: e.payload.parsedDateFromFile,
-          userDate: e.payload.userDate,
-        })
-      } else {
-        setError(
-          e instanceof Error ? e.message : 'Error al agregar documentos desde el ERP',
-        )
-        handleSessionError(e instanceof Error ? e.message : '')
-      }
+      setError(
+        e instanceof Error ? e.message : 'Error al agregar documentos desde el ERP',
+      )
+      handleSessionError(e instanceof Error ? e.message : '')
     } finally {
       setIsSubmitting(false)
     }
-  }
-
-  const runRemoveDocuments = async (confirmFileDateMismatch: boolean) => {
-    if (!token || !removeBaseFile || !removeErpFile) return
-    const data = await removeDocumentsFromErpRequest(
-      token,
-      erpSource,
-      removeBaseActualizacionDate,
-      removeErpEmisionDate,
-      removeBaseFile,
-      removeErpFile,
-      confirmFileDateMismatch,
-    )
-    setRemoveResult(data)
   }
 
   const onSubmitRemoveDocumentsFromErp = async (
@@ -301,34 +206,62 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
   ) => {
     event.preventDefault()
     if (!token || !removeBaseFile || !removeErpFile) {
-      setError('Seleccioná ambos archivos CSV y las fechas.')
+      setError('Seleccioná ambos archivos CSV y la fecha de corte.')
       return
     }
     setIsRemoveSubmitting(true)
     setError('')
     setRemoveResult(null)
     try {
-      await runRemoveDocuments(false)
+      const data = await removeDocumentsFromErpRequest(
+        token,
+        erpSource,
+        removeFechaCorteEliminacion,
+        removeBaseFile,
+        removeErpFile,
+      )
+      setRemoveResult(data)
     } catch (e) {
-      if (
-        e instanceof ConsolidationRequestError &&
-        e.payload?.code === 'ERP_FILE_DATE_MISMATCH'
-      ) {
-        setDateMismatchPrompt({
-          mode: 'remove',
-          parsedDateFromFile: e.payload.parsedDateFromFile,
-          userDate: e.payload.userDate,
-        })
-      } else {
-        setError(
-          e instanceof Error
-            ? e.message
-            : 'Error al eliminar documentos desde el ERP',
-        )
-        handleSessionError(e instanceof Error ? e.message : '')
-      }
+      setError(
+        e instanceof Error
+          ? e.message
+          : 'Error al eliminar documentos desde el ERP',
+      )
+      handleSessionError(e instanceof Error ? e.message : '')
     } finally {
       setIsRemoveSubmitting(false)
+    }
+  }
+
+  const onSubmitFullConsolidationFromErp = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault()
+    if (!token || !fullBaseFile || !fullErpFile) {
+      setError('Seleccioná ambos archivos CSV y la fecha de corte.')
+      return
+    }
+    setIsFullSubmitting(true)
+    setError('')
+    setFullResult(null)
+    try {
+      const data = await fullConsolidationFromErpRequest(
+        token,
+        erpSource,
+        fullFechaCorteEliminacion,
+        fullBaseFile,
+        fullErpFile,
+      )
+      setFullResult(data)
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : 'Error en la consolidación completa',
+      )
+      handleSessionError(e instanceof Error ? e.message : '')
+    } finally {
+      setIsFullSubmitting(false)
     }
   }
 
@@ -339,7 +272,7 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
       title={MODAL_TITLE[step]}
       onClose={onClose}
       size="wide"
-      closeOnEscape={dateMismatchPrompt === null}
+      closeOnEscape
       footer={
         <p className="muted" style={{ margin: 0, textAlign: 'center' }}>
           {MODAL_FOOTER[step]}
@@ -365,7 +298,18 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
           >
             <p className="documentHubCardTitle">Eliminar documentos</p>
             <p className="documentHubCardDesc">
-              Cuenta corriente + Archivo actualizado: quitá documentos del snapshot según fecha de corte y presencia (CEOS o TOTVS).
+              Cuenta corriente + Archivo actualizado: quitá documentos del snapshot hasta la fecha de corte (CEOS o TOTVS).
+            </p>
+          </button>
+          <button
+            type="button"
+            className="documentHubCard"
+            onClick={() => setStep('full')}
+          >
+            <p className="documentHubCardTitle">Consolidación completa</p>
+            <p className="documentHubCardDesc">
+              Cuenta corriente + listado ERP histórico (pendientes): agregá nuevos comprobantes
+              y eliminá documentos saldados hasta la fecha de corte (CEOS o TOTVS).
             </p>
           </button>
           <button
@@ -438,19 +382,6 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
                 />
               </label>
               <label className="fieldLabel">
-                Fecha de actualización del archivo base
-                <input
-                  className="input"
-                  type="date"
-                  value={addBaseActualizacionDate}
-                  onChange={(e) => {
-                    setAddBaseActualizacionDate(e.target.value)
-                    resetOperationResults()
-                  }}
-                  required
-                />
-              </label>
-              <label className="fieldLabel">
                 Archivo ERP (.csv)
                 <input
                   className="input"
@@ -458,19 +389,6 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
                   accept=".csv"
                   onChange={(e) => {
                     setErpFile(e.target.files?.[0] ?? null)
-                    resetOperationResults()
-                  }}
-                  required
-                />
-              </label>
-              <label className="fieldLabel">
-                Fecha de emisión del archivo ERP
-                <input
-                  className="input"
-                  type="date"
-                  value={addErpEmisionDate}
-                  onChange={(e) => {
-                    setAddErpEmisionDate(e.target.value)
                     resetOperationResults()
                   }}
                   required
@@ -579,19 +497,6 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
                 />
               </label>
               <label className="fieldLabel">
-                Fecha de actualización del archivo base
-                <input
-                  className="input"
-                  type="date"
-                  value={removeBaseActualizacionDate}
-                  onChange={(e) => {
-                    setRemoveBaseActualizacionDate(e.target.value)
-                    resetOperationResults()
-                  }}
-                  required
-                />
-              </label>
-              <label className="fieldLabel">
                 Archivo ERP (.csv)
                 <input
                   className="input"
@@ -605,13 +510,13 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
                 />
               </label>
               <label className="fieldLabel">
-                Fecha de emisión del archivo ERP (corte para eliminar)
+                Fecha de corte para eliminación
                 <input
                   className="input"
                   type="date"
-                  value={removeErpEmisionDate}
+                  value={removeFechaCorteEliminacion}
                   onChange={(e) => {
-                    setRemoveErpEmisionDate(e.target.value)
+                    setRemoveFechaCorteEliminacion(e.target.value)
                     resetOperationResults()
                   }}
                   required
@@ -634,8 +539,8 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
               <section className="surfaceSection">
                 <h3 className="sectionTitle">Resultado eliminación</h3>
                 <p className="muted">
-                  Fecha de emisión usada como corte:{' '}
-                  <strong>{removeResult.erpEmisionDate}</strong>
+                  Fecha de corte aplicada:{' '}
+                  <strong>{removeResult.fechaCorteEliminacion}</strong>
                 </p>
                 <div className="statGrid">
                   <p className="statItem">Base: {removeResult.stats.baseDocs}</p>
@@ -665,6 +570,143 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
                   <h3 className="sectionTitle">Errores de parseo ERP (muestra)</h3>
                   <pre className="preJson">
                     {JSON.stringify(removeResult.previewErrors, null, 2)}
+                  </pre>
+                </section>
+              ) : null}
+            </>
+          ) : null}
+        </>
+      ) : null}
+
+      {step === 'full' ? (
+        <>
+          <section className="surfaceSection">
+            <h3 className="sectionTitle">Cargar archivos</h3>
+            <p className="muted sectionHint">
+              Se aplica primero la lógica de <strong>agregar</strong> (comprobantes del
+              ERP que no estaban en el base) y después la de <strong>eliminar</strong>{' '}
+              (anteriores a la fecha de corte que no figuren en el mismo listado ERP).
+              Un solo listado histórico con todos los pendientes.
+            </p>
+            <form
+              className="formGrid"
+              onSubmit={onSubmitFullConsolidationFromErp}
+            >
+              <label className="fieldLabel">
+                ERP
+                <select
+                  className="select"
+                  value={erpSource}
+                  onChange={(e) => {
+                    setErpSource(e.target.value as ErpSource)
+                    resetOperationResults()
+                  }}
+                >
+                  <option value="CEOS">CEOS</option>
+                  <option value="TOTVS">TOTVS</option>
+                </select>
+              </label>
+              <label className="fieldLabel">
+                Archivo base — cuenta corriente (.csv)
+                <input
+                  className="input"
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => {
+                    setFullBaseFile(e.target.files?.[0] ?? null)
+                    resetOperationResults()
+                  }}
+                  required
+                />
+              </label>
+              <label className="fieldLabel">
+                Archivo ERP — histórico / pendientes (.csv)
+                <input
+                  className="input"
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => {
+                    setFullErpFile(e.target.files?.[0] ?? null)
+                    resetOperationResults()
+                  }}
+                  required
+                />
+              </label>
+              <label className="fieldLabel">
+                Fecha de corte para eliminación
+                <input
+                  className="input"
+                  type="date"
+                  value={fullFechaCorteEliminacion}
+                  onChange={(e) => {
+                    setFullFechaCorteEliminacion(e.target.value)
+                    resetOperationResults()
+                  }}
+                  required
+                />
+              </label>
+              <button
+                type="submit"
+                className="btn"
+                disabled={!token || isFullSubmitting}
+              >
+                {isFullSubmitting ? 'Consolidando…' : 'Ejecutar consolidación completa'}
+              </button>
+            </form>
+          </section>
+
+          {fullResult ? (
+            <>
+              <section className="surfaceSection">
+                <h3 className="sectionTitle">Resultado consolidación completa</h3>
+                <p className="muted sectionHint">
+                  Fecha de corte aplicada:{' '}
+                  <strong>{fullResult.fechaCorteEliminacion}</strong>
+                </p>
+                <div className="statGrid">
+                  <p className="statItem">Base: {fullResult.stats.baseDocs}</p>
+                  <p className="statItem">ERP: {fullResult.stats.erpDocs}</p>
+                  <p className="statItem">
+                    Mantenidos: {fullResult.stats.keptDocs}
+                  </p>
+                  <p className="statItem">
+                    Agregados: {fullResult.stats.addedDocs}
+                  </p>
+                  <p className="statItem">
+                    Eliminados: {fullResult.stats.removedDocs}
+                  </p>
+                  <p className="statItem">Errores: {fullResult.stats.errors}</p>
+                </div>
+              </section>
+
+              {postOpDownloadSection(erpSource)}
+
+              <section className="surfaceSection">
+                <h3 className="sectionTitle">Vista previa (agregados)</h3>
+                <pre className="preJson">
+                  {JSON.stringify(fullResult.previewAdded, null, 2)}
+                </pre>
+              </section>
+
+              <section className="surfaceSection">
+                <h3 className="sectionTitle">Vista previa (eliminados)</h3>
+                <pre className="preJson">
+                  {JSON.stringify(fullResult.previewRemoved, null, 2)}
+                </pre>
+              </section>
+
+              <section className="surfaceSection">
+                <h3 className="sectionTitle">Vista previa (resultado, primeros)</h3>
+                <pre className="preJson">
+                  {JSON.stringify(fullResult.previewCurrent, null, 2)}
+                </pre>
+              </section>
+
+              {fullResult.previewErrors && fullResult.previewErrors.length > 0 ? (
+                <section className="surfaceSection">
+                  <h3 className="sectionTitle">Errores de parseo (muestra)</h3>
+                  <pre className="preJson">
+                    {JSON.stringify(fullResult.previewErrors, null, 2)}
                   </pre>
                 </section>
               ) : null}
@@ -718,67 +760,6 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
           </div>
         </section>
       ) : null}
-    </Modal>
-
-    <Modal
-      open={dateMismatchPrompt !== null}
-      stack
-      title="Fecha de emisión distinta"
-      onClose={() => setDateMismatchPrompt(null)}
-      size="default"
-    >
-      <div className="dateMismatchPanel">
-        <p className="muted sectionHint" style={{ marginTop: 0 }}>
-          El archivo ERP declara una fecha distinta a la &quot;fecha de emisión&quot;
-          que ingresaste. Revisá los valores y decidí si querés continuar.
-        </p>
-        <dl className="dateMismatchGrid">
-          <div>
-            <dt>Fecha en el archivo</dt>
-            <dd>
-              {dateMismatchPrompt?.parsedDateFromFile ?? '—'}
-            </dd>
-          </div>
-          <div>
-            <dt>Tu fecha de emisión</dt>
-            <dd>
-              {dateMismatchPrompt?.userDate ?? '—'}
-            </dd>
-          </div>
-        </dl>
-        <p className="muted sectionHint">
-          {dateMismatchPrompt?.mode === 'remove'
-            ? 'Si continuás, se usará tu fecha como corte para eliminar documentos.'
-            : 'Si continuás, se registrará la consolidación con tu fecha de emisión.'}
-        </p>
-        <div className="dateMismatchActions">
-          <button
-            type="button"
-            className="btn btnSecondary"
-            onClick={() => setDateMismatchPrompt(null)}
-          >
-            Volver y corregir
-          </button>
-          <button
-            type="button"
-            className="btn"
-            disabled={
-              dateMismatchPrompt?.mode === 'add'
-                ? !token || isSubmitting
-                : !token || isRemoveSubmitting
-            }
-            onClick={() => void confirmDateMismatchAndRetry()}
-          >
-            {dateMismatchPrompt?.mode === 'add'
-              ? isSubmitting
-                ? 'Procesando…'
-                : 'Continuar igual'
-              : isRemoveSubmitting
-                ? 'Procesando…'
-                : 'Continuar igual'}
-          </button>
-        </div>
-      </div>
     </Modal>
     </>
   )

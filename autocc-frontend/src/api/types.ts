@@ -27,8 +27,6 @@ export type AddDocumentsFromErpResponse = {
   consolidationId: number
   erpSource: ErpSource
   status: string
-  baseActualizacionDate: string
-  erpEmisionDate: string
   stats: AddDocumentsFromErpStats
   previewAdded: Array<{
     clienteId: string
@@ -59,12 +57,53 @@ export type AddDocumentsFromErpResponse = {
   }>
 }
 
+export type FullConsolidationFromErpResponse = {
+  consolidationId: number
+  erpSource: ErpSource
+  status: string
+  fechaCorteEliminacion: string
+  stats: {
+    baseDocs: number
+    erpDocs: number
+    keptDocs: number
+    addedDocs: number
+    removedDocs: number
+    errors: number
+  }
+  previewAdded: Array<{
+    clienteId: string
+    tienda: string
+    tipoDocumento: string
+    numeroDocumento: string
+  }>
+  previewRemoved: Array<{
+    clienteId: string
+    tienda: string
+    tipoDocumento: string
+    numeroDocumento: string
+    fechaDoc: string | null
+  }>
+  previewCurrent: Array<{
+    clienteId: string
+    tienda: string
+    tipoDocumento: string
+    numeroDocumento: string
+    saldo: string | null
+    observaciones: string | null
+  }>
+  previewErrors?: Array<{
+    sourceFile: string
+    lineNumber: number
+    errorCode: string
+    message: string
+  }>
+}
+
 export type RemoveDocumentsFromErpResponse = {
   consolidationId: number
   erpSource: ErpSource
   status: string
-  baseActualizacionDate: string
-  erpEmisionDate: string
+  fechaCorteEliminacion: string
   stats: {
     baseDocs: number
     erpDocs: number

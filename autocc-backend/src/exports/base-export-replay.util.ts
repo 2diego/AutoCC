@@ -22,6 +22,11 @@ import {
   type CeosBaseStepResult,
   type TotvsBaseStepResult,
 } from '../consolidations/consolidation-parser.util';
+import { applySaldoReceiptPaymentColors } from './excel-saldo-receipt-fill.util';
+import {
+  applyClientHeaderRowBold,
+  applyReplayFirstFourRowStyles,
+} from './replay-excel-theming.util';
 
 const LINE_SPLIT_REGEX = /\r\n|\n|\r/;
 
@@ -96,6 +101,39 @@ function appendObservacionesColumn(
   const parts = splitBaseLine(rawLine).map(sanitizeCellText);
   parts.push(sanitizeCellText(observaciones ?? ''));
   return parts;
+}
+
+function appendObservacionesToCells(
+  parts: string[],
+  observaciones: string | null,
+): string[] {
+  const out = parts.map(sanitizeCellText);
+  out.push(sanitizeCellText(observaciones ?? ''));
+  return out;
+}
+
+/**
+ * Fila de export para un registro en `cc_current`: si el documento provino del **archivo base**
+ * (consolidación guardó `rawRowJson.raw`), reproducir **todas** las columnas (Recibo, notas, etc.).
+ * Solo si viene solo del listado ERP o no hay raw, sintetizar la fila mínima como antes.
+ */
+function buildExportCellsFromCcRow(row: CcCurrent): string[] {
+  const rawJson = row.rawRowJson;
+  if (
+    rawJson &&
+    rawJson['sourceFile'] === 'BASE' &&
+    typeof rawJson['raw'] === 'string'
+  ) {
+    const raw = rawJson['raw'].trim();
+    if (raw.length > 0) {
+      return splitBaseLine(rawJson['raw']).map(sanitizeCellText);
+    }
+  }
+  const synthetic =
+    row.erpSource.toUpperCase() === 'CEOS'
+      ? formatCeosCcRowAsBaseCsvLine(row)
+      : formatTotvsCcRowAsBaseCsvLine(row);
+  return splitBaseLine(synthetic).map(sanitizeCellText);
 }
 
 function groupCcRows(rows: CcCurrent[]): {
@@ -248,6 +286,8 @@ export async function buildReplayWorkbook(
   const dataRows: string[][] = [];
   /** Alineado con `dataRows`: clave documento para filas de comprobante, null en el resto. */
   const docRowKeys: (string | null)[] = [];
+  /** Fila "Cliente :…" (cabecera de cliente), para negrita en export. */
+  const clientHeaderRowFlags: boolean[] = [];
   const baseClientKeysSet = new Set<string>();
 
   let activeClientKey: string | null = null;
@@ -255,9 +295,14 @@ export async function buildReplayWorkbook(
   /** Última fila “sustantiva” del cliente activo (cabecera, documento o línea con texto); no avanza en filas vacías del base. */
   let segmentAnchorIndex: number | null = null;
 
-  const pushDataRow = (cells: string[], docKey: string | null) => {
+  const pushDataRow = (
+    cells: string[],
+    docKey: string | null,
+    isClientHeaderRow = false,
+  ) => {
     dataRows.push(cells);
     docRowKeys.push(docKey);
+    clientHeaderRowFlags.push(isClientHeaderRow);
   };
 
   const isRowBlank = (cells: string[]): boolean =>
@@ -289,13 +334,17 @@ export async function buildReplayWorkbook(
 
     const tail = dataRows.slice(segmentAnchorIndex + 1);
     const tailKeys = docRowKeys.slice(segmentAnchorIndex + 1);
+    const tailClientFlags = clientHeaderRowFlags.slice(segmentAnchorIndex + 1);
     dataRows.length = segmentAnchorIndex + 1;
     docRowKeys.length = segmentAnchorIndex + 1;
+    clientHeaderRowFlags.length = segmentAnchorIndex + 1;
     injections.forEach((row, i) => pushDataRow(row, injKeys[i]));
     if (tail.length === 0 || !isRowBlank(tail[0])) {
       pushDataRow([], null);
     }
-    tail.forEach((row, i) => pushDataRow(row, tailKeys[i]));
+    tail.forEach((row, i) =>
+      pushDataRow(row, tailKeys[i], tailClientFlags[i] ?? false),
+    );
   };
 
   const processLine = (result: CeosBaseStepResult | TotvsBaseStepResult) => {
@@ -314,7 +363,7 @@ export async function buildReplayWorkbook(
     result: CeosBaseStepResult | TotvsBaseStepResult,
   ) => {
     if (result.kind === 'header') {
-      pushDataRow(appendObservacionesColumn(line, null), null);
+      pushDataRow(appendObservacionesColumn(line, null), null, true);
       segmentAnchorIndex = dataRows.length - 1;
       return;
     }
@@ -325,9 +374,11 @@ export async function buildReplayWorkbook(
       if (!cc) {
         return;
       }
-      const exportLine = formatDocLineForExport(cc);
       pushDataRow(
-        appendObservacionesColumn(exportLine, cc.observaciones ?? null),
+        appendObservacionesToCells(
+          buildExportCellsFromCcRow(cc),
+          cc.observaciones ?? null,
+        ),
         result.docKey,
       );
       segmentAnchorIndex = dataRows.length - 1;
@@ -378,6 +429,7 @@ export async function buildReplayWorkbook(
     pushDataRow(
       appendObservacionesColumn(buildSyntheticClientHeaderLine(rows), null),
       null,
+      true,
     );
     for (const r of rows) {
       const line = formatDocLineForExport(r);
@@ -426,6 +478,15 @@ export async function buildReplayWorkbook(
       }
     }
   }
+
+  applyReplayFirstFourRowStyles(ws, erpSource, maxCols);
+  for (let i = 0; i < clientHeaderRowFlags.length; i++) {
+    if (clientHeaderRowFlags[i]) {
+      applyClientHeaderRowBold(ws, i + 1, maxCols);
+    }
+  }
+
+  applySaldoReceiptPaymentColors(ws, dataRows, docRowKeys, byDocKey);
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

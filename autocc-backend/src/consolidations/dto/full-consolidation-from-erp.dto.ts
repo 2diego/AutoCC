@@ -1,7 +1,7 @@
 import { IsEnum, Matches } from 'class-validator';
 import { ErpSource } from '../entities/consolidation.entity';
 
-export class RemoveDocumentsFromErpDto {
+export class FullConsolidationFromErpDto {
   @IsEnum(ErpSource)
   erpSource: ErpSource;
 
