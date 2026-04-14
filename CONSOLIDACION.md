@@ -28,9 +28,9 @@ En ambos casos el backend identifica cada comprobante con una **clave lógica** 
   1. Si **G** (Recibo) está vacía → no se aplica color.
   2. Si en **G** aparece la palabra `anulada` (sin distinguir mayúsculas) → monto de **Saldo** en azul **`#0000FF`** (cancelado / anulado).
   3. Si **G** contiene números de recibo (pueden ir separados por `/`, `-` o `+`) y **H** (importe(s) de recibo) está vacía → monto de **Saldo** en azul **`#0000FF`** (se asume cancelación total sin desglose de importes).
-  4. Si **H** tiene uno o más importes separados por `+` (cada tramo corresponde a un recibo): se suman esos importes (cada tramo en formato moneda AR: con o sin miles con `.`, con o sin `,xx` decimales) y se toma como referencia el **Importe** del documento (**D**), o si **D** está vacío el **Saldo** (**E**). Constante **2000** en la misma moneda que los importes del layout:
-     - Si la suma de importes de recibo es **≥ referencia − 2000** → monto de **Saldo** en azul **`#0000FF`** (considerado pagado en su totalidad).
-     - Si la suma es **&lt; referencia − 2000** → monto de **Saldo** en rojo **`#A20000`** (pago parcial).
+  4. Si **H** tiene uno o más importes separados por `+` (cada tramo corresponde a un recibo): se suman esos importes (cada tramo en formato moneda AR: con o sin miles con `.`, con o sin `,xx` decimales) y se toma como referencia el **Importe** del documento (**D**), o si **D** está vacío el **Saldo** (**E**). Constante **999** en la misma moneda que los importes del layout:
+     - Si la suma de importes de recibo es **≥ referencia − 999** → monto de **Saldo** en azul **`#0000FF`** (considerado pagado en su totalidad).
+     - Si la suma es **&lt; referencia − 999** → monto de **Saldo** en rojo **`#A20000`** (pago parcial).
   5. En cualquier otro caso (p. ej. sin recibos numéricos en **G** y sin `anulada`) → no se cambia el color del texto de **Saldo** (equivalente a “debe todo” o sin regla aplicable).
 
 ---

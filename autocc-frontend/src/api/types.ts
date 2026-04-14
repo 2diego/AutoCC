@@ -133,3 +133,31 @@ export type RemoveDocumentsFromErpResponse = {
     message: string
   }>
 }
+
+/** Respuesta de `GET .../bot/pendientes` */
+export type BotCurrentDocument = {
+  id: number
+  clienteId: string
+  tienda: string
+  nombreCliente: string
+  localidad: string
+  tipoDocumento: string
+  numeroDocumento: string
+  fechaDoc: string | null
+  saldo: string | null
+  observaciones: string | null
+  atrasoDiasCalculado: number
+  documentKey: string
+}
+
+export type BotDeudasClienteGroup = {
+  clienteId: string
+  tienda: string
+  nombreCliente: string
+  localidad: string
+  documentos: BotCurrentDocument[]
+}
+
+export type BotDeudasSinObservacionesResponse = {
+  clientes: BotDeudasClienteGroup[]
+}
