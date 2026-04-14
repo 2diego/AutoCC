@@ -17,6 +17,35 @@ import { ErpSource } from '../consolidations/entities/consolidation.entity';
 export class CcCurrentController {
   constructor(private readonly ccCurrentService: CcCurrentService) {}
 
+  /** Bot / UI: facturas y ND “pendientes”, con filtro opcional por cliente o texto. */
+  @Get(':erpSource/bot/pendientes')
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR)
+  botPendientes(
+    @Param('erpSource', new ParseEnumPipe(ErpSource)) erpSource: ErpSource,
+    @Query('clienteId') clienteId?: string,
+    @Query('q') q?: string,
+  ) {
+    return this.ccCurrentService.findBotPendientesFactura(
+      erpSource,
+      clienteId,
+      q,
+    );
+  }
+
+  /** Bot flujo “deudas”: grupos por cliente con documentos sin observación, atraso ≥ umbral (fecha doc → hoy). */
+  @Get(':erpSource/bot/deudas-sin-observaciones')
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR)
+  botDeudasSinObservaciones(
+    @Param('erpSource', new ParseEnumPipe(ErpSource)) erpSource: ErpSource,
+    @Query('minAtrasoDias') minAtrasoDias?: string,
+  ) {
+    const n =
+      minAtrasoDias != null && minAtrasoDias !== ''
+        ? Number(minAtrasoDias)
+        : 0;
+    return this.ccCurrentService.findBotDeudasSinObservaciones(erpSource, n);
+  }
+
   @Get(':erpSource')
   @Roles(UserRole.ADMIN, UserRole.OPERATOR)
   findByErpSource(

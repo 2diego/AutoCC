@@ -10,6 +10,7 @@ import { UpdateConsolidationDto } from './dto/update-consolidation.dto';
 import {
   Consolidation,
   ConsolidationStatus,
+  ErpSource,
 } from './entities/consolidation.entity';
 import { CcCurrent } from '../cc-current/entities/cc-current.entity';
 import { CcBackup } from '../cc-backup/entities/cc-backup.entity';
@@ -132,6 +133,52 @@ export class ConsolidationsService {
     return { ...doc, valor, saldo };
   }
 
+  /**
+   * CEOS: si el documento quedó desde el base sin nombre/localidad en `rawRowJson` pero el listado ERP
+   * trae la misma clave, copia esos campos (bots / export). TOTVS: sin cambios.
+   */
+  private enrichCeosDocsWithErpClienteMeta(
+    finalDocs: ParsedDocument[],
+    erpDocs: ParsedDocument[],
+  ): ParsedDocument[] {
+    if (finalDocs.length === 0 || finalDocs[0].erpSource !== ErpSource.CEOS) {
+      return finalDocs;
+    }
+    const erpByKey = new Map<string, ParsedDocument>();
+    for (const e of erpDocs) {
+      erpByKey.set(buildDocumentKey(e), e);
+    }
+    const metaNombre = (doc: ParsedDocument) =>
+      String(
+        doc.rawRowJson?.['nombreCliente'] ??
+          doc.rawRowJson?.['clienteNombre'] ??
+          doc.clienteNombre ??
+          '',
+      ).trim();
+    const metaLoc = (doc: ParsedDocument) =>
+      String(doc.rawRowJson?.['localidad'] ?? doc.localidad ?? '').trim();
+
+    return finalDocs.map((doc) => {
+      const n = metaNombre(doc);
+      const l = metaLoc(doc);
+      if (n && l) return doc;
+      const erp = erpByKey.get(buildDocumentKey(doc));
+      if (!erp) return doc;
+      const en = metaNombre(erp);
+      const el = metaLoc(erp);
+      if (!en && !el) return doc;
+      const raw = { ...(doc.rawRowJson ?? {}) };
+      if (!n && en) raw['nombreCliente'] = en;
+      if (!l && el) raw['localidad'] = el;
+      return {
+        ...doc,
+        clienteNombre: doc.clienteNombre ?? erp.clienteNombre,
+        localidad: doc.localidad ?? erp.localidad,
+        rawRowJson: raw,
+      };
+    });
+  }
+
   create(createConsolidationDto: CreateConsolidationDto) {
     const entity = this.consolidationsRepository.create(createConsolidationDto);
     return this.consolidationsRepository.save(entity);
@@ -213,12 +260,17 @@ export class ConsolidationsService {
         }
       });
       const finalDocuments = [...finalDocumentsMap.values()];
+      const finalForSave = this.enrichCeosDocsWithErpClienteMeta(
+        finalDocuments,
+        normalizedErpDocs,
+      );
       const allErrors = [...baseParsed.errors, ...erpParsed.errors];
 
       await this.dataSource.transaction(async (manager) => {
         const ccCurrentRepo = manager.getRepository(CcCurrent);
         const ccBackupRepo = manager.getRepository(CcBackup);
         const errorsRepo = manager.getRepository(ConsolidationError);
+        const consRepo = manager.getRepository(Consolidation);
 
         if (allErrors.length > 0) {
           await errorsRepo.save(
@@ -263,7 +315,7 @@ export class ConsolidationsService {
         await ccCurrentRepo.delete({ erpSource: dto.erpSource });
 
         await ccCurrentRepo.save(
-          finalDocuments.map((doc) =>
+          finalForSave.map((doc) =>
             ccCurrentRepo.create({
               erpSource: doc.erpSource,
               clienteId: doc.clienteId,
@@ -278,16 +330,16 @@ export class ConsolidationsService {
             }),
           ),
         );
-      });
 
-      consolidation.status = ConsolidationStatus.OK;
-      consolidation.baseFileText = baseContent;
-      consolidation.baseDocsCount = normalizedBaseDocs.length;
-      consolidation.erpDocsCount = normalizedErpDocs.length;
-      consolidation.keptDocsCount = normalizedBaseDocs.length;
-      consolidation.addedDocsCount = addedDocuments.length;
-      consolidation.errorCount = allErrors.length;
-      await this.consolidationsRepository.save(consolidation);
+        consolidation.status = ConsolidationStatus.OK;
+        consolidation.baseFileText = baseContent;
+        consolidation.baseDocsCount = normalizedBaseDocs.length;
+        consolidation.erpDocsCount = normalizedErpDocs.length;
+        consolidation.keptDocsCount = normalizedBaseDocs.length;
+        consolidation.addedDocsCount = addedDocuments.length;
+        consolidation.errorCount = allErrors.length;
+        await consRepo.save(consolidation);
+      });
 
       return {
         consolidationId: consolidation.id,
@@ -307,7 +359,7 @@ export class ConsolidationsService {
           tipoDocumento: doc.tipoDocumento,
           numeroDocumento: doc.numeroDocumento,
         })),
-        previewCurrent: finalDocuments.slice(0, 20).map((doc) => ({
+        previewCurrent: finalForSave.slice(0, 20).map((doc) => ({
           clienteId: doc.clienteId,
           tienda: doc.tienda,
           tipoDocumento: doc.tipoDocumento,
@@ -376,12 +428,18 @@ export class ConsolidationsService {
           cutoffDate,
         );
 
+      const finalForSave = this.enrichCeosDocsWithErpClienteMeta(
+        finalDocuments,
+        normalizedErpDocs,
+      );
+
       const allErrors = [...baseParsed.errors, ...erpParsed.errors];
 
       await this.dataSource.transaction(async (manager) => {
         const ccCurrentRepo = manager.getRepository(CcCurrent);
         const ccBackupRepo = manager.getRepository(CcBackup);
         const errorsRepo = manager.getRepository(ConsolidationError);
+        const consRepo = manager.getRepository(Consolidation);
 
         if (allErrors.length > 0) {
           await errorsRepo.save(
@@ -426,7 +484,7 @@ export class ConsolidationsService {
         await ccCurrentRepo.delete({ erpSource: dto.erpSource });
 
         await ccCurrentRepo.save(
-          finalDocuments.map((doc) =>
+          finalForSave.map((doc) =>
             ccCurrentRepo.create({
               erpSource: doc.erpSource,
               clienteId: doc.clienteId,
@@ -441,16 +499,16 @@ export class ConsolidationsService {
             }),
           ),
         );
-      });
 
-      consolidation.status = ConsolidationStatus.OK;
-      consolidation.baseFileText = baseContent;
-      consolidation.baseDocsCount = normalizedBaseDocs.length;
-      consolidation.erpDocsCount = normalizedErpDocs.length;
-      consolidation.keptDocsCount = finalDocuments.length;
-      consolidation.addedDocsCount = 0;
-      consolidation.errorCount = allErrors.length;
-      await this.consolidationsRepository.save(consolidation);
+        consolidation.status = ConsolidationStatus.OK;
+        consolidation.baseFileText = baseContent;
+        consolidation.baseDocsCount = normalizedBaseDocs.length;
+        consolidation.erpDocsCount = normalizedErpDocs.length;
+        consolidation.keptDocsCount = finalForSave.length;
+        consolidation.addedDocsCount = 0;
+        consolidation.errorCount = allErrors.length;
+        await consRepo.save(consolidation);
+      });
 
       return {
         consolidationId: consolidation.id,
@@ -473,7 +531,7 @@ export class ConsolidationsService {
             ? doc.fechaDoc.toISOString().slice(0, 10)
             : null,
         })),
-        previewCurrent: finalDocuments.slice(0, 20).map((doc) => ({
+        previewCurrent: finalForSave.slice(0, 20).map((doc) => ({
           clienteId: doc.clienteId,
           tienda: doc.tienda,
           tipoDocumento: doc.tipoDocumento,
@@ -563,12 +621,18 @@ export class ConsolidationsService {
           cutoffDate,
         );
 
+      const finalForSave = this.enrichCeosDocsWithErpClienteMeta(
+        finalDocuments,
+        normalizedErpDocs,
+      );
+
       const allErrors = [...baseParsed.errors, ...erpParsed.errors];
 
       await this.dataSource.transaction(async (manager) => {
         const ccCurrentRepo = manager.getRepository(CcCurrent);
         const ccBackupRepo = manager.getRepository(CcBackup);
         const errorsRepo = manager.getRepository(ConsolidationError);
+        const consRepo = manager.getRepository(Consolidation);
 
         if (allErrors.length > 0) {
           await errorsRepo.save(
@@ -613,7 +677,7 @@ export class ConsolidationsService {
         await ccCurrentRepo.delete({ erpSource: dto.erpSource });
 
         await ccCurrentRepo.save(
-          finalDocuments.map((doc) =>
+          finalForSave.map((doc) =>
             ccCurrentRepo.create({
               erpSource: doc.erpSource,
               clienteId: doc.clienteId,
@@ -628,16 +692,16 @@ export class ConsolidationsService {
             }),
           ),
         );
-      });
 
-      consolidation.status = ConsolidationStatus.OK;
-      consolidation.baseFileText = baseContent;
-      consolidation.baseDocsCount = normalizedBaseDocs.length;
-      consolidation.erpDocsCount = normalizedErpDocs.length;
-      consolidation.keptDocsCount = finalDocuments.length;
-      consolidation.addedDocsCount = addedDocuments.length;
-      consolidation.errorCount = allErrors.length;
-      await this.consolidationsRepository.save(consolidation);
+        consolidation.status = ConsolidationStatus.OK;
+        consolidation.baseFileText = baseContent;
+        consolidation.baseDocsCount = normalizedBaseDocs.length;
+        consolidation.erpDocsCount = normalizedErpDocs.length;
+        consolidation.keptDocsCount = finalForSave.length;
+        consolidation.addedDocsCount = addedDocuments.length;
+        consolidation.errorCount = allErrors.length;
+        await consRepo.save(consolidation);
+      });
 
       return {
         consolidationId: consolidation.id,
@@ -667,7 +731,7 @@ export class ConsolidationsService {
             ? doc.fechaDoc.toISOString().slice(0, 10)
             : null,
         })),
-        previewCurrent: finalDocuments.slice(0, 20).map((doc) => ({
+        previewCurrent: finalForSave.slice(0, 20).map((doc) => ({
           clienteId: doc.clienteId,
           tienda: doc.tienda,
           tipoDocumento: doc.tipoDocumento,

@@ -202,12 +202,13 @@ export const extractClientAndStore = (
 };
 
 const extractLocalidadFromSemicolon = (line: string): string => {
+  if (!line.includes(';')) return '';
   const parts = line
     .split(';')
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
   if (parts.length === 0) return '';
-  const candidate = parts[parts.length - 1];
+  const candidate = stripWrappingQuotes(parts[parts.length - 1]).trim();
   if (/^cliente/i.test(candidate)) return '';
   return candidate;
 };
@@ -252,6 +253,23 @@ const canonicalizeTotvsNumeroForKey = (numeroDocumento: string): string => {
   const [, prefix, digits] = m;
   const normalizedDigits = digits.replace(/^0+/, '') || '0';
   return `${prefix}${normalizedDigits}`;
+};
+
+/**
+ * CEOS: el comprobante suele ser dígito + letra + bloque numérico (p. ej. 6A051713).
+ * En el base a veces falta un cero a la izquierda en el bloque (6A51713); se normaliza
+ * a 6 cifras para cruzar con el listado ERP sin duplicar ni borrar de más.
+ */
+export const canonicalizeCeosNumeroForKey = (
+  numeroDocumento: string,
+): string => {
+  const t = numeroDocumento.trim().toUpperCase();
+  const m = t.match(/^(\d[A-Z])(\d+)$/);
+  if (!m) return t;
+  const [, prefix, digits] = m;
+  const stripped = digits.replace(/^0+/, '') || '0';
+  if (stripped.length > 6) return t;
+  return `${prefix}${stripped.padStart(6, '0')}`;
 };
 const hasAnyDigit = (value: string): boolean => /\d/.test(value);
 const isLikelyTotvsDocToken = (token: string): boolean =>
@@ -369,18 +387,18 @@ const extractCeosErpLineMeta = (
   if (!idMatch) return {};
   const afterId = trimmed.slice(idMatch[0].length);
   const firstDateIdx = afterId.search(/\d{1,2}\/\d{1,2}\/\d{2,4}/);
-  const preamble =
-    firstDateIdx >= 0 ? afterId.slice(0, firstDateIdx).trim() : afterId.trim();
+  if (firstDateIdx <= 0) return {};
+  const preamble = afterId.slice(0, firstDateIdx).trim();
   if (!preamble) return {};
+  /** Texto completo antes de la 1.ª fecha (nombre + domicilio + localidad en muchos listados). */
+  const nombreCliente = preamble.replace(/\s+/g, ' ').trim();
   const chunks = preamble
     .split(/\s{2,}/)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  if (chunks.length === 0) return {};
-  const nombreCliente = chunks[0];
   const localidad =
     chunks.length >= 3
-      ? chunks[2]
+      ? chunks[chunks.length - 1]
       : chunks.length === 2
         ? chunks[1]
         : undefined;
@@ -397,8 +415,9 @@ const parseCeosIncremental = (content: string): ParseResult => {
     const trimmed = line.replace(/^"+|"+$/g, '').trim();
     if (!trimmed) return;
 
+    /** Listados "NV": entre mora y tipo suele aparecer columna origen (p. ej. `-`). Saldo puede llevar ` *`. */
     const tailMatch = trimmed.match(
-      /(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+\d+\s+([FCDR])\s+([A-Z0-9.-]+)\s+(-?[\d.,]+)\s*$/i,
+      /(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+\d+(?:\s+-\s+)?\s+([FCDR])\s+([A-Z0-9.-]+)\s+(-?[\d.,]+)\s*\*?\s*$/i,
     );
     if (!tailMatch) return;
 
@@ -672,7 +691,9 @@ export const buildDocumentKeyFromParts = (
   const numeroForKey =
     erpSource === ErpSource.TOTVS
       ? canonicalizeTotvsNumeroForKey(numeroDocumento)
-      : numeroDocumento;
+      : erpSource === ErpSource.CEOS
+        ? canonicalizeCeosNumeroForKey(numeroDocumento)
+        : numeroDocumento;
   return `${erpSource}|${clienteId}|${tienda}|${tipoDocumento}|${numeroForKey}`;
 };
 

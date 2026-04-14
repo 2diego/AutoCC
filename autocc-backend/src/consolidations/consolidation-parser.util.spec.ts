@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
+  buildDocumentKeyFromParts,
   documentDateMatchesDmYPattern,
   parseBaseFile,
   parseDocumentDateDmY,
@@ -78,6 +79,48 @@ describe('consolidation parser fixtures', () => {
           doc.numeroDocumento === '6A051791',
       ),
     ).toBe(true);
+  });
+
+  it('parses CEOS ERP listado NV (columna origen entre mora y tipo)', () => {
+    const line =
+      '"30294 ACTUAL ALIMENTOS          LAVALLE 425                         BOLIVAR       11/03/26   11/03/26   33            -        F 6A051713       4,179,347.57"';
+    const result = parseErpListingForDocumentAdd(ErpSource.CEOS, line);
+
+    expect(result.documents).toHaveLength(1);
+    expect(result.documents[0].clienteId).toBe('30294');
+    expect(result.documents[0].tipoDocumento).toBe('F');
+    expect(result.documents[0].numeroDocumento).toBe('6A051713');
+    expect(result.documents[0].fechaDoc?.toISOString().slice(0, 10)).toBe(
+      '2026-03-11',
+    );
+    const raw = result.documents[0].rawRowJson as Record<string, unknown>;
+    expect(String(raw['nombreCliente'])).toContain('ACTUAL ALIMENTOS');
+    expect(String(raw['nombreCliente'])).toContain('LAVALLE');
+    expect(raw['localidad']).toBe('BOLIVAR');
+  });
+
+  it('parses CEOS ERP listado NV when saldo line ends with asterisk', () => {
+    const line =
+      '"44298 ACTUAL LAS FLORES LAVALLE 425                                 BOLIVAR       11/03/26   11/03/26   33            -        F 6A051716       1,717,233.31 *"';
+    const result = parseErpListingForDocumentAdd(ErpSource.CEOS, line);
+
+    expect(result.documents).toHaveLength(1);
+    expect(result.documents[0].numeroDocumento).toBe('6A051716');
+  });
+
+  it('unifies CEOS document keys when base omits a leading zero in numero', () => {
+    expect(
+      buildDocumentKeyFromParts(ErpSource.CEOS, '30294', '01', 'F', '6A51713'),
+    ).toBe(
+      buildDocumentKeyFromParts(ErpSource.CEOS, '30294', '01', 'F', '6A051713'),
+    );
+  });
+
+  it('parses many rows from CEOS NV cobranza fixture', () => {
+    const content = readFixture('120-Listado-de-cobranza-13-4-NV.csv');
+    const result = parseErpListingForDocumentAdd(ErpSource.CEOS, content);
+
+    expect(result.documents.length).toBeGreaterThan(50);
   });
 
   it('parses TOTVS base fixture with real rows', () => {
