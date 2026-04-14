@@ -1,7 +1,5 @@
 import {
   BadRequestException,
-  HttpException,
-  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -23,10 +21,11 @@ import {
   parseBaseFile,
   parseErpListingForDocumentAdd,
   parseErpListingForDocumentRemoval,
-  tryExtractDeclaredEmisionDateFromErpCsv,
 } from './consolidation-parser.util';
 import { AddDocumentsFromErpDto } from './dto/add-documents-from-erp.dto';
+import { FullConsolidationFromErpDto } from './dto/full-consolidation-from-erp.dto';
 import { RemoveDocumentsFromErpDto } from './dto/remove-documents-from-erp.dto';
+import { decodeUploadBufferToUtf8String } from '../common/utils/decode-upload-buffer.util';
 
 @Injectable()
 export class ConsolidationsService {
@@ -81,33 +80,38 @@ export class ConsolidationsService {
   }
 
   /**
-   * Si el CSV declara una fecha de emisión y difiere de la del usuario, exige confirmación explícita.
+   * Reglas de “eliminar”: documentos con fechaDoc &lt; corte se mantienen solo si la clave está en el listado ERP.
    */
-  private assertErpDeclaredDateMatchesUserOrConfirmed(
-    erpSource: ErpSource,
-    erpContent: string,
-    userEmisionIso: string,
-    confirmMismatch: boolean,
-  ): void {
-    const parsed = tryExtractDeclaredEmisionDateFromErpCsv(
-      erpSource,
-      erpContent,
-    );
-    if (!parsed) return;
-    const parsedSlice = parsed.toISOString().slice(0, 10);
-    if (parsedSlice === userEmisionIso) return;
-    if (confirmMismatch) return;
-    throw new HttpException(
-      {
-        statusCode: HttpStatus.BAD_REQUEST,
-        code: 'ERP_FILE_DATE_MISMATCH',
-        message:
-          'La fecha de emisión indicada no coincide con la fecha declarada en el archivo ERP.',
-        userDate: userEmisionIso,
-        parsedDateFromFile: parsedSlice,
-      },
-      HttpStatus.BAD_REQUEST,
-    );
+  private filterDocumentsByRemoveRules(
+    documents: ParsedDocument[],
+    erpDocKeys: Set<string>,
+    cutoffDate: Date,
+  ): {
+    finalDocuments: ParsedDocument[];
+    removedDocuments: ParsedDocument[];
+  } {
+    const removedDocuments: ParsedDocument[] = [];
+    const filtered = documents.filter((doc) => {
+      if (!doc.fechaDoc) return true;
+      if (doc.fechaDoc.getTime() >= cutoffDate.getTime()) return true;
+      const existsInErpListing = erpDocKeys.has(buildDocumentKey(doc));
+      if (!existsInErpListing) {
+        removedDocuments.push(doc);
+        return false;
+      }
+      return true;
+    });
+    const finalDocumentsMap = new Map<string, (typeof filtered)[number]>();
+    filtered.forEach((doc) => {
+      const key = buildDocumentKey(doc);
+      if (!finalDocumentsMap.has(key)) {
+        finalDocumentsMap.set(key, doc);
+      }
+    });
+    return {
+      finalDocuments: [...finalDocumentsMap.values()],
+      removedDocuments,
+    };
   }
 
   /**
@@ -127,6 +131,52 @@ export class ConsolidationsService {
     }
 
     return { ...doc, valor, saldo };
+  }
+
+  /**
+   * CEOS: si el documento quedó desde el base sin nombre/localidad en `rawRowJson` pero el listado ERP
+   * trae la misma clave, copia esos campos (bots / export). TOTVS: sin cambios.
+   */
+  private enrichCeosDocsWithErpClienteMeta(
+    finalDocs: ParsedDocument[],
+    erpDocs: ParsedDocument[],
+  ): ParsedDocument[] {
+    if (finalDocs.length === 0 || finalDocs[0].erpSource !== ErpSource.CEOS) {
+      return finalDocs;
+    }
+    const erpByKey = new Map<string, ParsedDocument>();
+    for (const e of erpDocs) {
+      erpByKey.set(buildDocumentKey(e), e);
+    }
+    const metaNombre = (doc: ParsedDocument) =>
+      String(
+        doc.rawRowJson?.['nombreCliente'] ??
+          doc.rawRowJson?.['clienteNombre'] ??
+          doc.clienteNombre ??
+          '',
+      ).trim();
+    const metaLoc = (doc: ParsedDocument) =>
+      String(doc.rawRowJson?.['localidad'] ?? doc.localidad ?? '').trim();
+
+    return finalDocs.map((doc) => {
+      const n = metaNombre(doc);
+      const l = metaLoc(doc);
+      if (n && l) return doc;
+      const erp = erpByKey.get(buildDocumentKey(doc));
+      if (!erp) return doc;
+      const en = metaNombre(erp);
+      const el = metaLoc(erp);
+      if (!en && !el) return doc;
+      const raw = { ...(doc.rawRowJson ?? {}) };
+      if (!n && en) raw['nombreCliente'] = en;
+      if (!l && el) raw['localidad'] = el;
+      return {
+        ...doc,
+        clienteNombre: doc.clienteNombre ?? erp.clienteNombre,
+        localidad: doc.localidad ?? erp.localidad,
+        rawRowJson: raw,
+      };
+    });
   }
 
   create(createConsolidationDto: CreateConsolidationDto) {
@@ -175,17 +225,8 @@ export class ConsolidationsService {
     );
 
     try {
-      const baseContent = baseFile.buffer.toString('utf-8');
-      const erpContent = erpFile.buffer.toString('utf-8');
-
-      this.parseUserIsoDateToUtcMidnight(dto.baseActualizacionDate);
-      this.parseUserIsoDateToUtcMidnight(dto.erpEmisionDate);
-      this.assertErpDeclaredDateMatchesUserOrConfirmed(
-        dto.erpSource,
-        erpContent,
-        dto.erpEmisionDate,
-        dto.confirmFileDateMismatch === true,
-      );
+      const baseContent = decodeUploadBufferToUtf8String(baseFile.buffer);
+      const erpContent = decodeUploadBufferToUtf8String(erpFile.buffer);
 
       const baseParsed = parseBaseFile(dto.erpSource, baseContent);
       const erpParsed = parseErpListingForDocumentAdd(
@@ -219,12 +260,17 @@ export class ConsolidationsService {
         }
       });
       const finalDocuments = [...finalDocumentsMap.values()];
+      const finalForSave = this.enrichCeosDocsWithErpClienteMeta(
+        finalDocuments,
+        normalizedErpDocs,
+      );
       const allErrors = [...baseParsed.errors, ...erpParsed.errors];
 
       await this.dataSource.transaction(async (manager) => {
         const ccCurrentRepo = manager.getRepository(CcCurrent);
         const ccBackupRepo = manager.getRepository(CcBackup);
         const errorsRepo = manager.getRepository(ConsolidationError);
+        const consRepo = manager.getRepository(Consolidation);
 
         if (allErrors.length > 0) {
           await errorsRepo.save(
@@ -269,7 +315,7 @@ export class ConsolidationsService {
         await ccCurrentRepo.delete({ erpSource: dto.erpSource });
 
         await ccCurrentRepo.save(
-          finalDocuments.map((doc) =>
+          finalForSave.map((doc) =>
             ccCurrentRepo.create({
               erpSource: doc.erpSource,
               clienteId: doc.clienteId,
@@ -284,23 +330,21 @@ export class ConsolidationsService {
             }),
           ),
         );
-      });
 
-      consolidation.status = ConsolidationStatus.OK;
-      consolidation.baseFileText = baseContent;
-      consolidation.baseDocsCount = normalizedBaseDocs.length;
-      consolidation.erpDocsCount = normalizedErpDocs.length;
-      consolidation.keptDocsCount = normalizedBaseDocs.length;
-      consolidation.addedDocsCount = addedDocuments.length;
-      consolidation.errorCount = allErrors.length;
-      await this.consolidationsRepository.save(consolidation);
+        consolidation.status = ConsolidationStatus.OK;
+        consolidation.baseFileText = baseContent;
+        consolidation.baseDocsCount = normalizedBaseDocs.length;
+        consolidation.erpDocsCount = normalizedErpDocs.length;
+        consolidation.keptDocsCount = normalizedBaseDocs.length;
+        consolidation.addedDocsCount = addedDocuments.length;
+        consolidation.errorCount = allErrors.length;
+        await consRepo.save(consolidation);
+      });
 
       return {
         consolidationId: consolidation.id,
         erpSource: consolidation.erpSource,
         status: consolidation.status,
-        baseActualizacionDate: dto.baseActualizacionDate,
-        erpEmisionDate: dto.erpEmisionDate,
         stats: {
           baseDocs: consolidation.baseDocsCount,
           erpDocs: consolidation.erpDocsCount,
@@ -315,7 +359,7 @@ export class ConsolidationsService {
           tipoDocumento: doc.tipoDocumento,
           numeroDocumento: doc.numeroDocumento,
         })),
-        previewCurrent: finalDocuments.slice(0, 20).map((doc) => ({
+        previewCurrent: finalForSave.slice(0, 20).map((doc) => ({
           clienteId: doc.clienteId,
           tienda: doc.tienda,
           tipoDocumento: doc.tipoDocumento,
@@ -354,16 +398,11 @@ export class ConsolidationsService {
     );
 
     try {
-      const baseContent = baseFile.buffer.toString('utf-8');
-      const erpContent = erpFile.buffer.toString('utf-8');
+      const baseContent = decodeUploadBufferToUtf8String(baseFile.buffer);
+      const erpContent = decodeUploadBufferToUtf8String(erpFile.buffer);
 
-      this.parseUserIsoDateToUtcMidnight(dto.baseActualizacionDate);
-      const cutoffDate = this.parseUserIsoDateToUtcMidnight(dto.erpEmisionDate);
-      this.assertErpDeclaredDateMatchesUserOrConfirmed(
-        dto.erpSource,
-        erpContent,
-        dto.erpEmisionDate,
-        dto.confirmFileDateMismatch === true,
+      const cutoffDate = this.parseUserIsoDateToUtcMidnight(
+        dto.fechaCorteEliminacion,
       );
 
       const baseParsed = parseBaseFile(dto.erpSource, baseContent);
@@ -380,33 +419,19 @@ export class ConsolidationsService {
       );
 
       const erpDocKeys = new Set<string>();
-      normalizedErpDocs.forEach((doc) =>
-        erpDocKeys.add(buildDocumentKey(doc)),
+      normalizedErpDocs.forEach((doc) => erpDocKeys.add(buildDocumentKey(doc)));
+
+      const { finalDocuments, removedDocuments } =
+        this.filterDocumentsByRemoveRules(
+          normalizedBaseDocs,
+          erpDocKeys,
+          cutoffDate,
+        );
+
+      const finalForSave = this.enrichCeosDocsWithErpClienteMeta(
+        finalDocuments,
+        normalizedErpDocs,
       );
-
-      const removedDocuments: (typeof normalizedBaseDocs)[number][] = [];
-      const filteredDocuments = normalizedBaseDocs.filter((doc) => {
-        if (!doc.fechaDoc) return true;
-        if (doc.fechaDoc.getTime() >= cutoffDate.getTime()) return true;
-        const existsInErpListing = erpDocKeys.has(buildDocumentKey(doc));
-        if (!existsInErpListing) {
-          removedDocuments.push(doc);
-          return false;
-        }
-        return true;
-      });
-
-      const finalDocumentsMap = new Map<
-        string,
-        (typeof filteredDocuments)[number]
-      >();
-      filteredDocuments.forEach((doc) => {
-        const key = buildDocumentKey(doc);
-        if (!finalDocumentsMap.has(key)) {
-          finalDocumentsMap.set(key, doc);
-        }
-      });
-      const finalDocuments = [...finalDocumentsMap.values()];
 
       const allErrors = [...baseParsed.errors, ...erpParsed.errors];
 
@@ -414,6 +439,7 @@ export class ConsolidationsService {
         const ccCurrentRepo = manager.getRepository(CcCurrent);
         const ccBackupRepo = manager.getRepository(CcBackup);
         const errorsRepo = manager.getRepository(ConsolidationError);
+        const consRepo = manager.getRepository(Consolidation);
 
         if (allErrors.length > 0) {
           await errorsRepo.save(
@@ -458,7 +484,7 @@ export class ConsolidationsService {
         await ccCurrentRepo.delete({ erpSource: dto.erpSource });
 
         await ccCurrentRepo.save(
-          finalDocuments.map((doc) =>
+          finalForSave.map((doc) =>
             ccCurrentRepo.create({
               erpSource: doc.erpSource,
               clienteId: doc.clienteId,
@@ -473,23 +499,22 @@ export class ConsolidationsService {
             }),
           ),
         );
-      });
 
-      consolidation.status = ConsolidationStatus.OK;
-      consolidation.baseFileText = baseContent;
-      consolidation.baseDocsCount = normalizedBaseDocs.length;
-      consolidation.erpDocsCount = normalizedErpDocs.length;
-      consolidation.keptDocsCount = finalDocuments.length;
-      consolidation.addedDocsCount = 0;
-      consolidation.errorCount = allErrors.length;
-      await this.consolidationsRepository.save(consolidation);
+        consolidation.status = ConsolidationStatus.OK;
+        consolidation.baseFileText = baseContent;
+        consolidation.baseDocsCount = normalizedBaseDocs.length;
+        consolidation.erpDocsCount = normalizedErpDocs.length;
+        consolidation.keptDocsCount = finalForSave.length;
+        consolidation.addedDocsCount = 0;
+        consolidation.errorCount = allErrors.length;
+        await consRepo.save(consolidation);
+      });
 
       return {
         consolidationId: consolidation.id,
         erpSource: consolidation.erpSource,
         status: consolidation.status,
-        baseActualizacionDate: dto.baseActualizacionDate,
-        erpEmisionDate: dto.erpEmisionDate,
+        fechaCorteEliminacion: dto.fechaCorteEliminacion,
         stats: {
           baseDocs: consolidation.baseDocsCount,
           erpDocs: consolidation.erpDocsCount,
@@ -506,7 +531,207 @@ export class ConsolidationsService {
             ? doc.fechaDoc.toISOString().slice(0, 10)
             : null,
         })),
-        previewCurrent: finalDocuments.slice(0, 20).map((doc) => ({
+        previewCurrent: finalForSave.slice(0, 20).map((doc) => ({
+          clienteId: doc.clienteId,
+          tienda: doc.tienda,
+          tipoDocumento: doc.tipoDocumento,
+          numeroDocumento: doc.numeroDocumento,
+          saldo: doc.saldo,
+          observaciones: null,
+        })),
+        previewErrors: allErrors.slice(0, 20).map((err) => ({
+          sourceFile: err.sourceFile,
+          lineNumber: err.lineNumber,
+          errorCode: err.errorCode,
+          message: err.message,
+        })),
+      };
+    } catch (error) {
+      consolidation.status = ConsolidationStatus.FAILED;
+      consolidation.errorCount += 1;
+      await this.consolidationsRepository.save(consolidation);
+      throw error;
+    }
+  }
+
+  /**
+   * Un solo paso: misma lógica que agregar (unión base + ERP por clave) y luego eliminar
+   * (corte + presencia en el mismo listado ERP), sin nuevos algoritmos de parseo.
+   */
+  async fullConsolidationFromErp(
+    dto: FullConsolidationFromErpDto,
+    baseFile: Express.Multer.File,
+    erpFile: Express.Multer.File,
+  ) {
+    const consolidation = await this.consolidationsRepository.save(
+      this.consolidationsRepository.create({
+        erpSource: dto.erpSource,
+        baseFileName: baseFile.originalname,
+        erpFileName: erpFile.originalname,
+        status: ConsolidationStatus.PROCESSING,
+      }),
+    );
+
+    try {
+      const baseContent = decodeUploadBufferToUtf8String(baseFile.buffer);
+      const erpContent = decodeUploadBufferToUtf8String(erpFile.buffer);
+
+      const cutoffDate = this.parseUserIsoDateToUtcMidnight(
+        dto.fechaCorteEliminacion,
+      );
+
+      const baseParsed = parseBaseFile(dto.erpSource, baseContent);
+      const erpParsed = parseErpListingForDocumentAdd(
+        dto.erpSource,
+        erpContent,
+      );
+
+      const normalizedBaseDocs = baseParsed.documents.map((doc) =>
+        this.normalizeDocumentAmounts(this.normalizeDocument(doc)),
+      );
+      const normalizedErpDocs = erpParsed.documents.map((doc) =>
+        this.normalizeDocumentAmounts(this.normalizeDocument(doc)),
+      );
+
+      const baseMap = new Map<string, (typeof normalizedBaseDocs)[number]>();
+      normalizedBaseDocs.forEach((doc) =>
+        baseMap.set(buildDocumentKey(doc), doc),
+      );
+
+      const addedDocuments = normalizedErpDocs.filter(
+        (doc) => !baseMap.has(buildDocumentKey(doc)),
+      );
+      const afterAddRaw = [...normalizedBaseDocs, ...addedDocuments];
+      const afterAddDeduped = new Map<string, (typeof afterAddRaw)[number]>();
+      afterAddRaw.forEach((doc) => {
+        const key = buildDocumentKey(doc);
+        if (!afterAddDeduped.has(key)) {
+          afterAddDeduped.set(key, doc);
+        }
+      });
+      const afterAddDocuments = [...afterAddDeduped.values()];
+
+      const erpDocKeys = new Set<string>();
+      normalizedErpDocs.forEach((doc) => erpDocKeys.add(buildDocumentKey(doc)));
+
+      const { finalDocuments, removedDocuments } =
+        this.filterDocumentsByRemoveRules(
+          afterAddDocuments,
+          erpDocKeys,
+          cutoffDate,
+        );
+
+      const finalForSave = this.enrichCeosDocsWithErpClienteMeta(
+        finalDocuments,
+        normalizedErpDocs,
+      );
+
+      const allErrors = [...baseParsed.errors, ...erpParsed.errors];
+
+      await this.dataSource.transaction(async (manager) => {
+        const ccCurrentRepo = manager.getRepository(CcCurrent);
+        const ccBackupRepo = manager.getRepository(CcBackup);
+        const errorsRepo = manager.getRepository(ConsolidationError);
+        const consRepo = manager.getRepository(Consolidation);
+
+        if (allErrors.length > 0) {
+          await errorsRepo.save(
+            allErrors.map((err) =>
+              errorsRepo.create({
+                consolidation,
+                sourceFile: err.sourceFile,
+                lineNumber: err.lineNumber,
+                rawLine: err.rawLine,
+                errorCode: err.errorCode,
+                message: err.message,
+              }),
+            ),
+          );
+        }
+
+        const previousCurrent = await ccCurrentRepo.find({
+          where: { erpSource: dto.erpSource },
+        });
+
+        if (previousCurrent.length > 0) {
+          await ccBackupRepo.save(
+            previousCurrent.map((row) =>
+              ccBackupRepo.create({
+                erpSource: row.erpSource,
+                clienteId: row.clienteId,
+                tienda: row.tienda,
+                tipoDocumento: row.tipoDocumento,
+                numeroDocumento: row.numeroDocumento,
+                fechaDoc: this.toDateOnly(row.fechaDoc),
+                valor: row.valor,
+                saldo: row.saldo,
+                rawRowJson: row.rawRowJson,
+                observaciones: row.observaciones,
+                motivoDeuda: row.motivoDeuda,
+                backupFromConsolidation: consolidation,
+              }),
+            ),
+          );
+        }
+
+        await ccCurrentRepo.delete({ erpSource: dto.erpSource });
+
+        await ccCurrentRepo.save(
+          finalForSave.map((doc) =>
+            ccCurrentRepo.create({
+              erpSource: doc.erpSource,
+              clienteId: doc.clienteId,
+              tienda: doc.tienda,
+              tipoDocumento: doc.tipoDocumento,
+              numeroDocumento: doc.numeroDocumento,
+              fechaDoc: this.toDateOnly(doc.fechaDoc),
+              valor: doc.valor,
+              saldo: doc.saldo,
+              rawRowJson: doc.rawRowJson,
+              lastConsolidation: consolidation,
+            }),
+          ),
+        );
+
+        consolidation.status = ConsolidationStatus.OK;
+        consolidation.baseFileText = baseContent;
+        consolidation.baseDocsCount = normalizedBaseDocs.length;
+        consolidation.erpDocsCount = normalizedErpDocs.length;
+        consolidation.keptDocsCount = finalForSave.length;
+        consolidation.addedDocsCount = addedDocuments.length;
+        consolidation.errorCount = allErrors.length;
+        await consRepo.save(consolidation);
+      });
+
+      return {
+        consolidationId: consolidation.id,
+        erpSource: consolidation.erpSource,
+        status: consolidation.status,
+        fechaCorteEliminacion: dto.fechaCorteEliminacion,
+        stats: {
+          baseDocs: consolidation.baseDocsCount,
+          erpDocs: consolidation.erpDocsCount,
+          keptDocs: consolidation.keptDocsCount,
+          addedDocs: consolidation.addedDocsCount,
+          removedDocs: removedDocuments.length,
+          errors: consolidation.errorCount,
+        },
+        previewAdded: addedDocuments.slice(0, 20).map((doc) => ({
+          clienteId: doc.clienteId,
+          tienda: doc.tienda,
+          tipoDocumento: doc.tipoDocumento,
+          numeroDocumento: doc.numeroDocumento,
+        })),
+        previewRemoved: removedDocuments.slice(0, 20).map((doc) => ({
+          clienteId: doc.clienteId,
+          tienda: doc.tienda,
+          tipoDocumento: doc.tipoDocumento,
+          numeroDocumento: doc.numeroDocumento,
+          fechaDoc: doc.fechaDoc
+            ? doc.fechaDoc.toISOString().slice(0, 10)
+            : null,
+        })),
+        previewCurrent: finalForSave.slice(0, 20).map((doc) => ({
           clienteId: doc.clienteId,
           tienda: doc.tienda,
           tipoDocumento: doc.tipoDocumento,

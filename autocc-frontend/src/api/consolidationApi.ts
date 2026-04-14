@@ -2,6 +2,7 @@ import { getApiBaseUrl } from './config'
 import type {
   AddDocumentsFromErpResponse,
   ErpSource,
+  FullConsolidationFromErpResponse,
   RemoveDocumentsFromErpResponse,
 } from './types'
 
@@ -9,8 +10,6 @@ export type ApiErrorPayload = {
   statusCode?: number
   message?: string | string[]
   code?: string
-  userDate?: string
-  parsedDateFromFile?: string
 }
 
 export class ConsolidationRequestError extends Error {
@@ -62,19 +61,11 @@ async function readApiError(
 export async function addDocumentsFromErpRequest(
   token: string,
   erpSource: ErpSource,
-  baseActualizacionDate: string,
-  erpEmisionDate: string,
   baseFile: File,
   erpFile: File,
-  confirmFileDateMismatch = false,
 ): Promise<AddDocumentsFromErpResponse> {
   const formData = new FormData()
   formData.append('erpSource', erpSource)
-  formData.append('baseActualizacionDate', baseActualizacionDate)
-  formData.append('erpEmisionDate', erpEmisionDate)
-  if (confirmFileDateMismatch) {
-    formData.append('confirmFileDateMismatch', 'true')
-  }
   formData.append('baseFile', baseFile)
   formData.append('erpFile', erpFile)
 
@@ -95,19 +86,13 @@ export async function addDocumentsFromErpRequest(
 export async function removeDocumentsFromErpRequest(
   token: string,
   erpSource: ErpSource,
-  baseActualizacionDate: string,
-  erpEmisionDate: string,
+  fechaCorteEliminacion: string,
   baseFile: File,
   erpFile: File,
-  confirmFileDateMismatch = false,
 ): Promise<RemoveDocumentsFromErpResponse> {
   const formData = new FormData()
   formData.append('erpSource', erpSource)
-  formData.append('baseActualizacionDate', baseActualizacionDate)
-  formData.append('erpEmisionDate', erpEmisionDate)
-  if (confirmFileDateMismatch) {
-    formData.append('confirmFileDateMismatch', 'true')
-  }
+  formData.append('fechaCorteEliminacion', fechaCorteEliminacion)
   formData.append('baseFile', baseFile)
   formData.append('erpFile', erpFile)
 
@@ -126,6 +111,36 @@ export async function removeDocumentsFromErpRequest(
     )
   }
   return (await response.json()) as RemoveDocumentsFromErpResponse
+}
+
+export async function fullConsolidationFromErpRequest(
+  token: string,
+  erpSource: ErpSource,
+  fechaCorteEliminacion: string,
+  baseFile: File,
+  erpFile: File,
+): Promise<FullConsolidationFromErpResponse> {
+  const formData = new FormData()
+  formData.append('erpSource', erpSource)
+  formData.append('fechaCorteEliminacion', fechaCorteEliminacion)
+  formData.append('baseFile', baseFile)
+  formData.append('erpFile', erpFile)
+
+  const response = await fetch(
+    `${getApiBaseUrl()}/consolidations/full-consolidation-from-erp`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    },
+  )
+  if (!response.ok) {
+    await readApiError(
+      response,
+      'No se pudo completar la consolidación (agregar y eliminar)',
+    )
+  }
+  return (await response.json()) as FullConsolidationFromErpResponse
 }
 
 export async function downloadCurrentExcel(

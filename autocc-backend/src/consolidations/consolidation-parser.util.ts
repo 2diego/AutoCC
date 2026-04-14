@@ -58,8 +58,7 @@ export function parseDocumentDateDmY(raw?: string | null): Date | null {
   const day = Number(match[1]);
   const month = Number(match[2]);
   const yStr = match[3];
-  const year =
-    yStr.length === 2 ? 2000 + Number(yStr) : Number(yStr);
+  const year = yStr.length === 2 ? 2000 + Number(yStr) : Number(yStr);
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   const date = new Date(Date.UTC(year, month - 1, day));
   if (
@@ -203,12 +202,13 @@ export const extractClientAndStore = (
 };
 
 const extractLocalidadFromSemicolon = (line: string): string => {
+  if (!line.includes(';')) return '';
   const parts = line
     .split(';')
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
   if (parts.length === 0) return '';
-  const candidate = parts[parts.length - 1];
+  const candidate = stripWrappingQuotes(parts[parts.length - 1]).trim();
   if (/^cliente/i.test(candidate)) return '';
   return candidate;
 };
@@ -237,6 +237,10 @@ const buildTotvsTypeFromToken = (token: string): string => {
   if (t.startsWith('D ')) return 'NCE';
   if (t.startsWith('NCE')) return 'NCE';
   if (t.startsWith('NCC')) return 'NCC';
+  // TOTVS: serie AC (p. ej. AC1-002100029354) es nota de crédito
+  if (/^AC\d+-/i.test(t)) return 'NCC';
+  // TOTVS: serie AD (p. ej. AD4-001400000862) es nota de débito
+  if (/^AD\d+-/i.test(t)) return 'ND';
   if (t.startsWith('RA')) return 'RA';
   return 'NF';
 };
@@ -250,9 +254,26 @@ const canonicalizeTotvsNumeroForKey = (numeroDocumento: string): string => {
   const normalizedDigits = digits.replace(/^0+/, '') || '0';
   return `${prefix}${normalizedDigits}`;
 };
+
+/**
+ * CEOS: el comprobante suele ser dígito + letra + bloque numérico (p. ej. 6A051713).
+ * En el base a veces falta un cero a la izquierda en el bloque (6A51713); se normaliza
+ * a 6 cifras para cruzar con el listado ERP sin duplicar ni borrar de más.
+ */
+export const canonicalizeCeosNumeroForKey = (
+  numeroDocumento: string,
+): string => {
+  const t = numeroDocumento.trim().toUpperCase();
+  const m = t.match(/^(\d[A-Z])(\d+)$/);
+  if (!m) return t;
+  const [, prefix, digits] = m;
+  const stripped = digits.replace(/^0+/, '') || '0';
+  if (stripped.length > 6) return t;
+  return `${prefix}${stripped.padStart(6, '0')}`;
+};
 const hasAnyDigit = (value: string): boolean => /\d/.test(value);
 const isLikelyTotvsDocToken = (token: string): boolean =>
-  /^(REC[.\s-]*\d+|RA[.\s-]*\d+|NF[.\s-]*\S*\d+|NCE[.\s-]*\S*\d+|NCC[.\s-]*\S*\d+|YD1[.\s-]*\S*\d+|[A-Z]\d{2}-\S*\d+|D\s+\S*\d+)/i.test(
+  /^(REC[.\s-]*\d+|RA[.\s-]*\d+|NF[.\s-]*\S*\d+|NCE[.\s-]*\S*\d+|NCC[.\s-]*\S*\d+|YD1[.\s-]*\S*\d+|AC\d+-\S*\d+|AD\d+-\S*\d+|[A-Z]\d{2}-\S*\d+|D\s+\S*\d+)/i.test(
     token.trim(),
   );
 
@@ -366,18 +387,18 @@ const extractCeosErpLineMeta = (
   if (!idMatch) return {};
   const afterId = trimmed.slice(idMatch[0].length);
   const firstDateIdx = afterId.search(/\d{1,2}\/\d{1,2}\/\d{2,4}/);
-  const preamble =
-    firstDateIdx >= 0 ? afterId.slice(0, firstDateIdx).trim() : afterId.trim();
+  if (firstDateIdx <= 0) return {};
+  const preamble = afterId.slice(0, firstDateIdx).trim();
   if (!preamble) return {};
+  /** Texto completo antes de la 1.ª fecha (nombre + domicilio + localidad en muchos listados). */
+  const nombreCliente = preamble.replace(/\s+/g, ' ').trim();
   const chunks = preamble
     .split(/\s{2,}/)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  if (chunks.length === 0) return {};
-  const nombreCliente = chunks[0];
   const localidad =
     chunks.length >= 3
-      ? chunks[2]
+      ? chunks[chunks.length - 1]
       : chunks.length === 2
         ? chunks[1]
         : undefined;
@@ -394,8 +415,9 @@ const parseCeosIncremental = (content: string): ParseResult => {
     const trimmed = line.replace(/^"+|"+$/g, '').trim();
     if (!trimmed) return;
 
+    /** Listados "NV": entre mora y tipo suele aparecer columna origen (p. ej. `-`). Saldo puede llevar ` *`. */
     const tailMatch = trimmed.match(
-      /(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+\d+\s+([FCDR])\s+([A-Z0-9.-]+)\s+(-?[\d.,]+)\s*$/i,
+      /(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+\d+(?:\s+-\s+)?\s+([FCDR])\s+([A-Z0-9.-]+)\s+(-?[\d.,]+)\s*\*?\s*$/i,
     );
     if (!tailMatch) return;
 
@@ -411,8 +433,14 @@ const parseCeosIncremental = (content: string): ParseResult => {
       return;
     }
 
-    const [, fechaDocRaw, fechaVtoRaw, tipoDocumento, numeroDocumento, saldoRaw] =
-      tailMatch;
+    const [
+      ,
+      fechaDocRaw,
+      fechaVtoRaw,
+      tipoDocumento,
+      numeroDocumento,
+      saldoRaw,
+    ] = tailMatch;
 
     const emisionCheck = checkExpectedDocumentDateField(
       fechaDocRaw,
@@ -590,13 +618,17 @@ const parseTotvsIncremental = (content: string): ParseResult => {
 
     const [
       ,
-      tipoDocumento,
+      tipoColumna,
       numeroDocumento,
       fechaDocRaw,
       fechaVtoRaw,
       valorRaw,
       saldoRaw,
     ] = docMatch;
+
+    const inferredTipo = buildTotvsTypeFromToken(numeroDocumento);
+    const tipoDocumento =
+      inferredTipo !== 'NF' ? inferredTipo : tipoColumna.toUpperCase();
 
     const emisionCheck = checkExpectedDocumentDateField(
       fechaDocRaw,
@@ -659,7 +691,9 @@ export const buildDocumentKeyFromParts = (
   const numeroForKey =
     erpSource === ErpSource.TOTVS
       ? canonicalizeTotvsNumeroForKey(numeroDocumento)
-      : numeroDocumento;
+      : erpSource === ErpSource.CEOS
+        ? canonicalizeCeosNumeroForKey(numeroDocumento)
+        : numeroDocumento;
   return `${erpSource}|${clienteId}|${tienda}|${tipoDocumento}|${numeroForKey}`;
 };
 
@@ -816,28 +850,3 @@ export const parseErpListingForDocumentAdd = parseIncrementalListingInternal;
 
 export const parseErpListingForDocumentRemoval =
   parseIncrementalListingInternal;
-
-/**
- * Intenta leer la fecha declarada en el CSV ERP para cruzar con `erpEmisionDate` del usuario.
- * - CEOS: primera coincidencia `FECHA : d/m/y`.
- * - TOTVS: **`Pregunta 01 : Fecha Desde?`** (parámetro del listado SIGA), no `Fch.Ref` ni `Emision`
- *   del encabezado (esas suelen ser la fecha de impresión/ejecución del reporte).
- *   Si no hay bloque de preguntas, se usa `Fch.Ref:` como respaldo.
- */
-export function tryExtractDeclaredEmisionDateFromErpCsv(
-  erpSource: ErpSource,
-  content: string,
-): Date | null {
-  if (erpSource === ErpSource.CEOS) {
-    const token = content.match(/FECHA\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1];
-    return parseDocumentDateDmY(token);
-  }
-  const fechaDesde = content.match(
-    /Pregunta\s*01\s*:\s*Fecha\s+Desde\??\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
-  )?.[1];
-  if (fechaDesde) {
-    return parseDocumentDateDmY(fechaDesde);
-  }
-  const fchRef = content.match(/Fch\.Ref:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1];
-  return parseDocumentDateDmY(fchRef);
-}

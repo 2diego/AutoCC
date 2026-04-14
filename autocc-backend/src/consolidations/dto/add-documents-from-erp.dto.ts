@@ -1,3 +1,7 @@
-import { ErpConsolidationDatesDto } from './erp-consolidation-dates.dto';
+import { IsEnum } from 'class-validator';
+import { ErpSource } from '../entities/consolidation.entity';
 
-export class AddDocumentsFromErpDto extends ErpConsolidationDatesDto {}
+export class AddDocumentsFromErpDto {
+  @IsEnum(ErpSource)
+  erpSource: ErpSource;
+}

@@ -200,6 +200,7 @@ export class ExportsService {
       { header: 'Fecha', key: 'c9', width: 14 },
       { header: 'Nota Credito', key: 'c10', width: 16 },
       { header: 'Nota Credito', key: 'c11', width: 16 },
+      { header: '', key: 'c12', width: 8 },
       { header: 'Observaciones', key: 'observaciones', width: 40 },
     ];
 
@@ -241,6 +242,7 @@ export class ExportsService {
         c9: '',
         c10: '',
         c11: '',
+        c12: '',
         observaciones: '',
       });
       clientHeaderRow.font = { bold: true };
@@ -259,6 +261,7 @@ export class ExportsService {
           c9: baseLike.c9,
           c10: baseLike.c10,
           c11: baseLike.c11,
+          c12: '',
           observaciones: row.observaciones ?? '',
         });
       });
@@ -316,6 +319,7 @@ export class ExportsService {
       { header: 'Fecha', key: 'c9', width: 14 },
       { header: 'Nota Credito', key: 'c10', width: 16 },
       { header: 'Nota Credito', key: 'c11', width: 16 },
+      { header: '', key: 'c12', width: 8 },
       { header: 'Observaciones', key: 'observaciones', width: 40 },
     ];
 
@@ -335,6 +339,7 @@ export class ExportsService {
         c9: baseLike.c9,
         c10: baseLike.c10,
         c11: baseLike.c11,
+        c12: '',
         observaciones: row.observaciones ?? '',
       });
     });

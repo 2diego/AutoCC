@@ -1,12 +1,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
+  buildDocumentKeyFromParts,
   documentDateMatchesDmYPattern,
   parseBaseFile,
   parseDocumentDateDmY,
   parseErpListingForDocumentAdd,
   stepTotvsBaseLine,
-  tryExtractDeclaredEmisionDateFromErpCsv,
 } from './consolidation-parser.util';
 import { ErpSource } from './entities/consolidation.entity';
 
@@ -81,6 +81,48 @@ describe('consolidation parser fixtures', () => {
     ).toBe(true);
   });
 
+  it('parses CEOS ERP listado NV (columna origen entre mora y tipo)', () => {
+    const line =
+      '"30294 ACTUAL ALIMENTOS          LAVALLE 425                         BOLIVAR       11/03/26   11/03/26   33            -        F 6A051713       4,179,347.57"';
+    const result = parseErpListingForDocumentAdd(ErpSource.CEOS, line);
+
+    expect(result.documents).toHaveLength(1);
+    expect(result.documents[0].clienteId).toBe('30294');
+    expect(result.documents[0].tipoDocumento).toBe('F');
+    expect(result.documents[0].numeroDocumento).toBe('6A051713');
+    expect(result.documents[0].fechaDoc?.toISOString().slice(0, 10)).toBe(
+      '2026-03-11',
+    );
+    const raw = result.documents[0].rawRowJson as Record<string, unknown>;
+    expect(String(raw['nombreCliente'])).toContain('ACTUAL ALIMENTOS');
+    expect(String(raw['nombreCliente'])).toContain('LAVALLE');
+    expect(raw['localidad']).toBe('BOLIVAR');
+  });
+
+  it('parses CEOS ERP listado NV when saldo line ends with asterisk', () => {
+    const line =
+      '"44298 ACTUAL LAS FLORES LAVALLE 425                                 BOLIVAR       11/03/26   11/03/26   33            -        F 6A051716       1,717,233.31 *"';
+    const result = parseErpListingForDocumentAdd(ErpSource.CEOS, line);
+
+    expect(result.documents).toHaveLength(1);
+    expect(result.documents[0].numeroDocumento).toBe('6A051716');
+  });
+
+  it('unifies CEOS document keys when base omits a leading zero in numero', () => {
+    expect(
+      buildDocumentKeyFromParts(ErpSource.CEOS, '30294', '01', 'F', '6A51713'),
+    ).toBe(
+      buildDocumentKeyFromParts(ErpSource.CEOS, '30294', '01', 'F', '6A051713'),
+    );
+  });
+
+  it('parses many rows from CEOS NV cobranza fixture', () => {
+    const content = readFixture('120-Listado-de-cobranza-13-4-NV.csv');
+    const result = parseErpListingForDocumentAdd(ErpSource.CEOS, content);
+
+    expect(result.documents.length).toBeGreaterThan(50);
+  });
+
   it('parses TOTVS base fixture with real rows', () => {
     const content = readFixture('totvsCuentaCorriente.csv');
     const result = parseBaseFile(ErpSource.TOTVS, content);
@@ -131,30 +173,6 @@ describe('consolidation parser fixtures', () => {
         doc.numeroDocumento === 'A06-002200027488',
     );
     expect(doc27488?.fechaDoc?.toISOString().slice(0, 10)).toBe('2026-03-30');
-  });
-
-  it('extracts declared ERP date from CEOS and TOTVS actualización fixtures', () => {
-    const ceos = readFixture('ceosActualizacionCC.csv');
-    const totvs = readFixture('totvsActualizacionCC.csv');
-
-    const ceosDate = tryExtractDeclaredEmisionDateFromErpCsv(
-      ErpSource.CEOS,
-      ceos,
-    );
-    const totvsDate = tryExtractDeclaredEmisionDateFromErpCsv(
-      ErpSource.TOTVS,
-      totvs,
-    );
-
-    expect(ceosDate?.toISOString().slice(0, 10)).toBe('2026-04-06');
-    // TOTVS: fecha de negocio del extracto = "Pregunta 01 : Fecha Desde?", no Fch.Ref del encabezado.
-    expect(totvsDate?.toISOString().slice(0, 10)).toBe('2020-01-01');
-  });
-
-  it('extracts TOTVS declared date from Fecha Desde in totvs-erp-cc fixture', () => {
-    const content = readFixture('totvs-erp-cc.csv');
-    const d = tryExtractDeclaredEmisionDateFromErpCsv(ErpSource.TOTVS, content);
-    expect(d?.toISOString().slice(0, 10)).toBe('2026-03-19');
   });
 
   it('keeps client context across TOTVS page breaks', () => {
@@ -214,5 +232,35 @@ describe('consolidation parser fixtures', () => {
 
     expect(doc).toBeDefined();
     expect(doc?.fechaDoc?.toISOString().slice(0, 10)).toBe('2026-03-30');
+  });
+
+  it('classifies TOTVS AC1-… as nota de crédito (NCC) even if la columna tipo dice NF', () => {
+    const content = [
+      'Cliente     :61688     - 01 - TEST',
+      'NF         AC1-002100029354                      10/04/2026   10/05/2026                            1.000,00                1.000,00         0',
+    ].join('\n');
+
+    const result = parseErpListingForDocumentAdd(ErpSource.TOTVS, content);
+    const doc = result.documents.find(
+      (d) => d.numeroDocumento === 'AC1-002100029354',
+    );
+
+    expect(doc).toBeDefined();
+    expect(doc?.tipoDocumento).toBe('NCC');
+  });
+
+  it('classifies TOTVS AD4-… as nota de débito (ND) even if la columna tipo dice NF', () => {
+    const content = [
+      'Cliente     :61688     - 01 - TEST',
+      'NF         AD4-001400000862                      10/04/2026   10/05/2026                            500,00                500,00         0',
+    ].join('\n');
+
+    const result = parseErpListingForDocumentAdd(ErpSource.TOTVS, content);
+    const doc = result.documents.find(
+      (d) => d.numeroDocumento === 'AD4-001400000862',
+    );
+
+    expect(doc).toBeDefined();
+    expect(doc?.tipoDocumento).toBe('ND');
   });
 });

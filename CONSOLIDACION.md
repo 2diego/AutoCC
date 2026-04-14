@@ -10,26 +10,37 @@ Hay dos operaciones distintas, ambas con **dos archivos CSV** y el mismo tipo de
 
 | Operación | Archivo 1 | Archivo 2 |
 |-----------|-----------|-----------|
-| **Agregar documentos** | Cuenta corriente **base** (snapshot completo o export de CC) | Listado ERP **actualizado** desde la fecha de actualizacion de la cuenta corriente a fecha actual (incremental / novedades) |
-| **Eliminar documentos** | Mismo concepto de **base** | Listado ERP **actualizado** historico a fecha de actualizacion de cuenta corriente|
+| **Agregar documentos** | Cuenta corriente **base** (snapshot completo o export de CC) | Listado ERP **incremental** (novedades: comprobantes que aún no estaban en el base). |
+| **Eliminar documentos** | Mismo concepto de **base** | Listado ERP **mismo formato incremental**; las claves que figuren indican qué comprobantes “siguen vigentes” bajo el corte. |
+| **Consolidación completa** | **Base** | **Un solo** listado ERP (p. ej. histórico con todos los pendientes); en un paso se agrega y luego se elimina por fecha de corte |
 
 En ambos casos el backend identifica cada comprobante con una **clave lógica** y normaliza textos (mayúsculas, espacios, reglas propias de TOTVS para el número de documento).
 
-Además, en la **interfaz** el usuario informa:
+**Fechas que el usuario ingresa en la interfaz**
 
-- **Fecha de actualización del archivo base** (`baseActualizacionDate`, formato `YYYY-MM-DD` en el formulario).
-- **Fecha de emisión del archivo ERP** (`erpEmisionDate`, mismo formato).
+- **Agregar:** solo se eligen ERP y archivos; no hay fechas de formulario (las fechas de comprobantes vienen de los CSV).
+- **Eliminar y consolidación completa:** además de los archivos, una **`fechaCorteEliminacion`** (`YYYY-MM-DD`) para la regla de eliminación (medianoche UTC al comparar con `fechaDoc`).
 
-Esas fechas se validan en el servidor. La **fecha de emisión** del formulario es la que define el **corte** al eliminar documentos (no se toma del texto del CSV como única fuente de verdad). Si el CSV declara otra fecha que la del usuario en los puntos usados para validación (CEOS: `FECHA :`; TOTVS: **`Pregunta 01 : Fecha Desde?`**, no la fecha de impresión `Fch.Ref` / `Emision` del encabezado), el sistema puede **exigir confirmación** si no coincide con lo ingresado.
+**Replay del Excel (export)**
+
+- El texto del archivo **base** queda guardado en la consolidación (`baseFileText`). La exportación a Excel **reproduce** ese contenido (incluida la línea de actualización u otras cabeceras que traiga el archivo), sin depender de campos de fecha enviados aparte en el formulario.
+- **Solo en el Excel descargable** (no afecta consolidación ni base de datos): para **facturas y notas de débito** (CEOS: tipos `F` y `D`; TOTVS: `NF`, `ND`, y comprobantes **YD1-…** que en el parser figuran como tipo `NCE`), el **texto del monto en Saldo** (columna **E**) puede llevar color de fuente según recibos en **G** e importes de recibo en **H**:
+  1. Si **G** (Recibo) está vacía → no se aplica color.
+  2. Si en **G** aparece la palabra `anulada` (sin distinguir mayúsculas) → monto de **Saldo** en azul **`#0000FF`** (cancelado / anulado).
+  3. Si **G** contiene números de recibo (pueden ir separados por `/`, `-` o `+`) y **H** (importe(s) de recibo) está vacía → monto de **Saldo** en azul **`#0000FF`** (se asume cancelación total sin desglose de importes).
+  4. Si **H** tiene uno o más importes separados por `+` (cada tramo corresponde a un recibo): se suman esos importes (cada tramo en formato moneda AR: con o sin miles con `.`, con o sin `,xx` decimales) y se toma como referencia el **Importe** del documento (**D**), o si **D** está vacío el **Saldo** (**E**). Constante **999** en la misma moneda que los importes del layout:
+     - Si la suma de importes de recibo es **≥ referencia − 999** → monto de **Saldo** en azul **`#0000FF`** (considerado pagado en su totalidad).
+     - Si la suma es **&lt; referencia − 999** → monto de **Saldo** en rojo **`#A20000`** (pago parcial).
+  5. En cualquier otro caso (p. ej. sin recibos numéricos en **G** y sin `anulada`) → no se cambia el color del texto de **Saldo** (equivalente a “debe todo” o sin regla aplicable).
 
 ---
 
 ## 2. Reglas de fechas
 
-### 2.1 Fechas ingresadas por el usuario
+### 2.1 Fecha de corte para eliminación
 
 - Formato en API / formulario: **`YYYY-MM-DD`** (input tipo fecha del navegador).
-- Se convierten a medianoche **UTC** para comparar con las fechas de comprobantes (también tratadas en UTC de forma consistente).
+- Se convierte a medianoche **UTC** para comparar con las fechas de comprobantes del base (también tratadas en UTC de forma consistente).
 
 ### 2.2 Fechas de comprobantes dentro de los CSV (regla de negocio **día / mes / año**)
 
@@ -55,12 +66,9 @@ Si en una **línea de documento** la fecha esperada **falta** o **no cumple** (f
 
 Los errores se persisten en la consolidación y se muestran en la **vista previa de errores** en el frontend.
 
-### 2.3 Fecha declarada en cabecera del CSV ERP (solo validación cruzada)
+### 2.3 Cabeceras del CSV ERP (solo informativo)
 
-- **CEOS:** primera coincidencia de `FECHA : d/m/y` (misma regla flexible de dígitos).
-- **TOTVS:** la línea **`Pregunta 01 : Fecha Desde? … d/m/y`** (parámetro del listado SIGA / SSRCC001). Esa es la fecha de criterio del extracto. Las líneas `Fch.Ref:` y `Emision:` del encabezado suelen ser la **fecha de generación del reporte** (p. ej. el día de la corrida) y **no** se usan para esta validación. Si el archivo no trae el bloque de preguntas, se usa `Fch.Ref:` solo como respaldo.
-
-Si existe y **no coincide** con `erpEmisionDate` del usuario, la API responde con error `ERP_FILE_DATE_MISMATCH` hasta que el usuario confirma continuar (`confirmFileDateMismatch`).
+Muchos extractos traen en el encabezado una **fecha de criterio del listado** (p. ej. CEOS `FECHA : d/m/y`, TOTVS **`Pregunta 01 : Fecha Desde?`** frente a `Fch.Ref` / `Emision` como fecha de impresión del reporte). Eso ayuda a interpretar el archivo a mano; **el backend no usa esas líneas** para validar ni para el corte: el corte de eliminación es solo **`fechaCorteEliminacion`** y las fechas que importan al algoritmo son las de **cada comprobante** en las filas de detalle.
 
 ---
 
@@ -85,7 +93,7 @@ Si existe y **no coincide** con `erpEmisionDate` del usuario, la API responde co
 ### 4.1 Archivo base
 
 - Similar estructura por **cliente y tienda** (encabezados).
-- Documento: token TOTVS (NF, REC/RA, NCE, prefijos tipo `A06-…`, etc.) con reglas de **tipo** interno (`RA`, `NF`, `NCE`, `NCC`, …).
+- Documento: token TOTVS (NF, REC/RA, NCE, prefijos tipo `A06-…`, etc.) con reglas de **tipo** interno (`RA`, `NF`, `ND`, `NCE`, `NCC`, …). Los comprobantes con número **`AC` + dígitos + `-…`** (p. ej. `AC1-002100029354`) se tratan como **nota de crédito** (`NCC`); los que siguen **`AD` + dígitos + `-…`** (p. ej. `AD4-001400000862`) como **nota de débito** (`ND`), también cuando el extracto lista la columna tipo como `NF`.
 - La **fecha del comprobante** está en la columna de emisión del layout base (separado por `;` o CSV). Si no cumple d/m/y, error y la fila no se cuenta como documento.
 
 ### 4.2 Listado ERP incremental
@@ -114,7 +122,7 @@ La clave de documento **canoniza** el número en TOTVS (p. ej. ceros a la izquie
 ## 6. Algoritmo: eliminar documentos
 
 1. Se parsean **base** y **listado ERP** (mismo parser incremental que en “agregar”).
-2. **Corte:** fecha `erpEmisionDate` ingresada por el usuario (medianoche UTC).
+2. **Corte:** fecha `fechaCorteEliminacion` ingresada por el usuario (medianoche UTC).
 3. Se construye un **conjunto de claves** presentes en el listado ERP.
 4. Para cada documento del **base**:
    - Si **no tiene** `fechaDoc` → **se mantiene** (no aplica corte).
@@ -129,15 +137,27 @@ La clave de documento **canoniza** el número en TOTVS (p. ej. ceros a la izquie
 
 ---
 
-## 7. Endpoints HTTP (referencia)
+## 7. Consolidación completa (un solo paso)
 
-- `POST /api/consolidations/add-documents-from-erp` — multipart: `baseFile`, `erpFile`, `erpSource`, `baseActualizacionDate`, `erpEmisionDate`, opcional `confirmFileDateMismatch`.
-- `POST /api/consolidations/remove-documents-from-erp` — mismos campos; el segundo archivo se envía como `erpFile`.
+Misma pareja de archivos (**cuenta corriente base** + **un listado ERP** que puede ser histórico, con todos los comprobantes pendientes). No se agregan parsers nuevos: se encadenan los algoritmos de las secciones **5** y **6** sobre el mismo parseo.
+
+1. **Fase agregar:** se calcula `base ∪ agregados` como en la sección 5 (claves del ERP que no estaban en el base).
+2. **Fase eliminar:** sobre ese conjunto unido, se aplican las reglas de la sección 6, con **fecha de corte** = `fechaCorteEliminacion` (YYYY-MM-DD) y el **mismo** listado ERP para el conjunto de claves “presentes”.
+
+Campos en el formulario / multipart: `erpSource`, `baseFile`, `erpFile`, **`fechaCorteEliminacion`**.
 
 ---
 
-## 8. Resumen práctico para operadores
+## 8. Endpoints HTTP (referencia)
+
+- `POST /api/consolidations/add-documents-from-erp` — multipart: `baseFile`, `erpFile`, `erpSource`.
+- `POST /api/consolidations/remove-documents-from-erp` — multipart: `baseFile`, `erpFile`, `erpSource`, `fechaCorteEliminacion`.
+- `POST /api/consolidations/full-consolidation-from-erp` — igual que remove: `fechaCorteEliminacion` para la fase eliminar tras el agregar.
+
+---
+
+## 9. Resumen práctico para operadores
 
 1. Garantizar en los CSV que todas las **fechas de comprobante** (y vencimiento en listados ERP) estén en **día/mes/año** con año de 2 o 4 cifras.
 2. Revisar tras cada corrida la **muestra de errores**: líneas con `INVALID_*` o `MISSING_DOCUMENT_DATE` deben corregirse en el archivo y volver a procesar si es necesario.
-3. La **fecha de emisión** del formulario debe reflejar el criterio de negocio al **eliminar**; si el archivo declara otra fecha en cabecera, el sistema advertirá antes de forzar la operación.
+3. En **eliminar** y **consolidación completa**, elegir la **fecha de corte** acorde al criterio de negocio (comprobantes anteriores al corte sin clave en el ERP se excluyen del resultado).

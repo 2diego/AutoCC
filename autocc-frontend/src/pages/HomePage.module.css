@@ -1,0 +1,42 @@
+/* Contenedor de la pantalla de inicio */
+.page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  gap: var(--space-3);
+  padding: 0 var(--mainPadding);
+  padding-top: var(--space-3);
+}
+
+.chatSlot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (min-width: 900px) {
+  .page {
+    max-width: 100%;
+    flex-direction: row;
+    align-items: stretch;
+    gap: var(--space-4);
+    padding-top: var(--space-4);
+  }
+
+  .intro {
+    width: min(280px, 32%);
+    align-self: flex-start;
+  }
+
+  .chatSlot {
+    flex: 1;
+    min-width: 0;
+  }
+}

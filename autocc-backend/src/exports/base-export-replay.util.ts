@@ -22,6 +22,12 @@ import {
   type CeosBaseStepResult,
   type TotvsBaseStepResult,
 } from '../consolidations/consolidation-parser.util';
+import { applySaldoReceiptPaymentColors } from './excel-saldo-receipt-fill.util';
+import {
+  applyClientHeaderRowBold,
+  applyReplayFirstFourRowStyles,
+  applyReplayHeaderLayoutTweaks,
+} from './replay-excel-theming.util';
 
 const LINE_SPLIT_REGEX = /\r\n|\n|\r/;
 
@@ -94,8 +100,50 @@ function appendObservacionesColumn(
   observaciones: string | null,
 ): string[] {
   const parts = splitBaseLine(rawLine).map(sanitizeCellText);
-  parts.push(sanitizeCellText(observaciones ?? ''));
+  while (parts.length < 13) {
+    parts.push('');
+  }
+  // Columna M (1-based): índice 12.
+  parts[12] = sanitizeCellText(observaciones ?? '');
   return parts;
+}
+
+function appendObservacionesToCells(
+  parts: string[],
+  observaciones: string | null,
+): string[] {
+  const out = parts.map(sanitizeCellText);
+  while (out.length < 13) {
+    out.push('');
+  }
+  // Columna M (1-based): índice 12.
+  out[12] = sanitizeCellText(observaciones ?? '');
+  return out;
+}
+
+/**
+ * Fila de export para un registro en `cc_current`: si el documento provino del **archivo base**
+ * (consolidación guardó `rawRowJson.raw`), reproducir **todas** las columnas (Recibo, notas, etc.).
+ * Solo si viene solo del listado ERP o no hay raw, sintetizar la fila mínima como antes.
+ */
+/** Expuesto para bot / API: mismas celdas que el replay (D–H) para reglas de Saldo azul. */
+export function buildExportCellsFromCcRow(row: CcCurrent): string[] {
+  const rawJson = row.rawRowJson;
+  if (
+    rawJson &&
+    rawJson['sourceFile'] === 'BASE' &&
+    typeof rawJson['raw'] === 'string'
+  ) {
+    const raw = rawJson['raw'].trim();
+    if (raw.length > 0) {
+      return splitBaseLine(rawJson['raw']).map(sanitizeCellText);
+    }
+  }
+  const synthetic =
+    row.erpSource.toUpperCase() === 'CEOS'
+      ? formatCeosCcRowAsBaseCsvLine(row)
+      : formatTotvsCcRowAsBaseCsvLine(row);
+  return splitBaseLine(synthetic).map(sanitizeCellText);
 }
 
 function groupCcRows(rows: CcCurrent[]): {
@@ -137,6 +185,12 @@ function buildSyntheticClientHeaderLine(rows: CcCurrent[]): string {
   const loc = ((raw['localidad'] as string | undefined) ?? '').trim();
   return `Cliente :${first.clienteId} - ${first.tienda} - ${nombre};;;${loc}`;
 }
+
+const getClientSortLabelFromHeaderLine = (line: string): string => {
+  const normalized = line.replace(/\u2013|\u2014/g, '-');
+  const m = normalized.match(/cliente[^-]*-\s*\d{1,2}\s*-\s*([^;]+)/i);
+  return m?.[1]?.trim() ?? '';
+};
 
 /**
  * `parseCeosBase`: `parts[2]` fecha, `parts[3]` valor, `parts[4]` saldo.
@@ -248,6 +302,12 @@ export async function buildReplayWorkbook(
   const dataRows: string[][] = [];
   /** Alineado con `dataRows`: clave documento para filas de comprobante, null en el resto. */
   const docRowKeys: (string | null)[] = [];
+  /** Fila "Cliente :…" (cabecera de cliente), para negrita en export. */
+  const clientHeaderRowFlags: boolean[] = [];
+  /** Clave cliente/tienda para cabeceras de cliente (null en otras filas). */
+  const clientHeaderKeys: (string | null)[] = [];
+  /** Etiqueta de orden tomada del encabezado del base (para clientes sin docs en cc_current). */
+  const baseHeaderSortLabelByClientKey = new Map<string, string>();
   const baseClientKeysSet = new Set<string>();
 
   let activeClientKey: string | null = null;
@@ -255,9 +315,16 @@ export async function buildReplayWorkbook(
   /** Última fila “sustantiva” del cliente activo (cabecera, documento o línea con texto); no avanza en filas vacías del base. */
   let segmentAnchorIndex: number | null = null;
 
-  const pushDataRow = (cells: string[], docKey: string | null) => {
+  const pushDataRow = (
+    cells: string[],
+    docKey: string | null,
+    isClientHeaderRow = false,
+    clientHeaderKey: string | null = null,
+  ) => {
     dataRows.push(cells);
     docRowKeys.push(docKey);
+    clientHeaderRowFlags.push(isClientHeaderRow);
+    clientHeaderKeys.push(isClientHeaderRow ? clientHeaderKey : null);
   };
 
   const isRowBlank = (cells: string[]): boolean =>
@@ -289,13 +356,41 @@ export async function buildReplayWorkbook(
 
     const tail = dataRows.slice(segmentAnchorIndex + 1);
     const tailKeys = docRowKeys.slice(segmentAnchorIndex + 1);
+    const tailClientFlags = clientHeaderRowFlags.slice(segmentAnchorIndex + 1);
+    const tailHeaderKeys = clientHeaderKeys.slice(segmentAnchorIndex + 1);
     dataRows.length = segmentAnchorIndex + 1;
     docRowKeys.length = segmentAnchorIndex + 1;
+    clientHeaderRowFlags.length = segmentAnchorIndex + 1;
+    clientHeaderKeys.length = segmentAnchorIndex + 1;
     injections.forEach((row, i) => pushDataRow(row, injKeys[i]));
     if (tail.length === 0 || !isRowBlank(tail[0])) {
       pushDataRow([], null);
     }
-    tail.forEach((row, i) => pushDataRow(row, tailKeys[i]));
+    tail.forEach((row, i) =>
+      pushDataRow(
+        row,
+        tailKeys[i],
+        tailClientFlags[i] ?? false,
+        tailHeaderKeys[i] ?? null,
+      ),
+    );
+  };
+
+  const compareClientKeys = (a: string, b: string): number => {
+    const la = (
+      getSortLabelForClient(byClientKey.get(a) ?? []) ||
+      baseHeaderSortLabelByClientKey.get(a) ||
+      ''
+    ).toUpperCase();
+    const lb = (
+      getSortLabelForClient(byClientKey.get(b) ?? []) ||
+      baseHeaderSortLabelByClientKey.get(b) ||
+      ''
+    ).toUpperCase();
+    if (la && lb && la !== lb) return la.localeCompare(lb, 'es');
+    if (la && !lb) return -1;
+    if (!la && lb) return 1;
+    return a.localeCompare(b, 'es');
   };
 
   const processLine = (result: CeosBaseStepResult | TotvsBaseStepResult) => {
@@ -314,7 +409,18 @@ export async function buildReplayWorkbook(
     result: CeosBaseStepResult | TotvsBaseStepResult,
   ) => {
     if (result.kind === 'header') {
-      pushDataRow(appendObservacionesColumn(line, null), null);
+      if (result.clientKey) {
+        baseHeaderSortLabelByClientKey.set(
+          result.clientKey,
+          getClientSortLabelFromHeaderLine(line),
+        );
+      }
+      pushDataRow(
+        appendObservacionesColumn(line, null),
+        null,
+        true,
+        result.clientKey ?? null,
+      );
       segmentAnchorIndex = dataRows.length - 1;
       return;
     }
@@ -325,9 +431,11 @@ export async function buildReplayWorkbook(
       if (!cc) {
         return;
       }
-      const exportLine = formatDocLineForExport(cc);
       pushDataRow(
-        appendObservacionesColumn(exportLine, cc.observaciones ?? null),
+        appendObservacionesToCells(
+          buildExportCellsFromCcRow(cc),
+          cc.observaciones ?? null,
+        ),
         result.docKey,
       );
       segmentAnchorIndex = dataRows.length - 1;
@@ -363,30 +471,48 @@ export async function buildReplayWorkbook(
   const erpOnlyClientKeys = ccClientKeys.filter(
     (ck) => !baseClientKeysSet.has(ck),
   );
-  erpOnlyClientKeys.sort((a, b) => {
-    const la = getSortLabelForClient(byClientKey.get(a) ?? []).toUpperCase();
-    const lb = getSortLabelForClient(byClientKey.get(b) ?? []).toUpperCase();
-    if (la && lb && la !== lb) return la.localeCompare(lb, 'es');
-    if (la && !lb) return -1;
-    if (!la && lb) return 1;
-    return a.localeCompare(b, 'es');
-  });
+  erpOnlyClientKeys.sort(compareClientKeys);
 
   for (const ck of erpOnlyClientKeys) {
     const rows = (byClientKey.get(ck) ?? []).sort(sortCcRowsForExport);
     if (rows.length === 0) continue;
-    pushDataRow(
+    const blockRows: string[][] = [];
+    const blockDocKeys: (string | null)[] = [];
+    const blockHeaderFlags: boolean[] = [];
+    const blockHeaderKeys: (string | null)[] = [];
+
+    blockRows.push(
       appendObservacionesColumn(buildSyntheticClientHeaderLine(rows), null),
-      null,
     );
+    blockDocKeys.push(null);
+    blockHeaderFlags.push(true);
+    blockHeaderKeys.push(ck);
     for (const r of rows) {
       const line = formatDocLineForExport(r);
-      pushDataRow(
-        appendObservacionesColumn(line, r.observaciones ?? null),
-        buildCcRowDocKey(r),
-      );
+      blockRows.push(appendObservacionesColumn(line, r.observaciones ?? null));
+      blockDocKeys.push(buildCcRowDocKey(r));
+      blockHeaderFlags.push(false);
+      blockHeaderKeys.push(null);
     }
-    pushDataRow([], null);
+    blockRows.push([]);
+    blockDocKeys.push(null);
+    blockHeaderFlags.push(false);
+    blockHeaderKeys.push(null);
+
+    let insertAt = dataRows.length;
+    for (let i = 0; i < clientHeaderKeys.length; i++) {
+      const existingKey = clientHeaderKeys[i];
+      if (!existingKey) continue;
+      if (compareClientKeys(ck, existingKey) < 0) {
+        insertAt = i;
+        break;
+      }
+    }
+
+    dataRows.splice(insertAt, 0, ...blockRows);
+    docRowKeys.splice(insertAt, 0, ...blockDocKeys);
+    clientHeaderRowFlags.splice(insertAt, 0, ...blockHeaderFlags);
+    clientHeaderKeys.splice(insertAt, 0, ...blockHeaderKeys);
   }
 
   let maxCols = 0;
@@ -426,6 +552,16 @@ export async function buildReplayWorkbook(
       }
     }
   }
+
+  applyReplayFirstFourRowStyles(ws, erpSource, maxCols);
+  applyReplayHeaderLayoutTweaks(ws, erpSource);
+  for (let i = 0; i < clientHeaderRowFlags.length; i++) {
+    if (clientHeaderRowFlags[i]) {
+      applyClientHeaderRowBold(ws, i + 1, maxCols);
+    }
+  }
+
+  applySaldoReceiptPaymentColors(ws, dataRows, docRowKeys, byDocKey);
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
