@@ -26,6 +26,7 @@ import { applySaldoReceiptPaymentColors } from './excel-saldo-receipt-fill.util'
 import {
   applyClientHeaderRowBold,
   applyReplayFirstFourRowStyles,
+  applyReplayHeaderLayoutTweaks,
 } from './replay-excel-theming.util';
 
 const LINE_SPLIT_REGEX = /\r\n|\n|\r/;
@@ -553,6 +554,7 @@ export async function buildReplayWorkbook(
   }
 
   applyReplayFirstFourRowStyles(ws, erpSource, maxCols);
+  applyReplayHeaderLayoutTweaks(ws, erpSource);
   for (let i = 0; i < clientHeaderRowFlags.length; i++) {
     if (clientHeaderRowFlags[i]) {
       applyClientHeaderRowBold(ws, i + 1, maxCols);

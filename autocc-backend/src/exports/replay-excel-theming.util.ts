@@ -99,6 +99,43 @@ export function applyReplayFirstFourRowStyles(
   }
 }
 
+function mergeAndCenter(ws: Worksheet, range: string): void {
+  ws.mergeCells(range);
+  const firstCell = ws.getCell(range.split(':')[0]);
+  firstCell.alignment = {
+    ...firstCell.alignment,
+    horizontal: 'center',
+    vertical: 'middle',
+  };
+}
+
+/**
+ * Ajustes de layout para encabezado del replay descargable.
+ * - TOTVS: combinar y centrar C1:J1
+ * - CEOS: combinar y centrar A1:D1; fondo negro en A3 y B3
+ */
+export function applyReplayHeaderLayoutTweaks(
+  ws: Worksheet,
+  erpSource: ErpSource,
+): void {
+  if (erpSource === ErpSource.CEOS) {
+    mergeAndCenter(ws, 'A1:D1');
+    ws.getCell('A3').fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF000000' },
+    };
+    ws.getCell('B3').fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF000000' },
+    };
+    return;
+  }
+
+  mergeAndCenter(ws, 'C1:J1');
+}
+
 /** Fila "Cliente :…" (cabecera de cliente, no comprobantes). */
 export function applyClientHeaderRowBold(
   ws: Worksheet,
