@@ -26,6 +26,7 @@ import { AddDocumentsFromErpDto } from './dto/add-documents-from-erp.dto';
 import { FullConsolidationFromErpDto } from './dto/full-consolidation-from-erp.dto';
 import { RemoveDocumentsFromErpDto } from './dto/remove-documents-from-erp.dto';
 import { decodeUploadBufferToUtf8String } from '../common/utils/decode-upload-buffer.util';
+import { parseMoneyArStringToNumber } from '../common/utils/format-money-ar-display.util';
 
 @Injectable()
 export class ConsolidationsService {
@@ -179,6 +180,103 @@ export class ConsolidationsService {
     });
   }
 
+  /**
+   * Si el base no tiene `fechaDoc` pero el mismo documento en el ERP sí,
+   * copia la fecha del ERP (misma clave) sin tocar el resto del registro del base.
+   */
+  private enrichBaseFechaFromErp(
+    baseDocs: ParsedDocument[],
+    erpDocs: ParsedDocument[],
+  ): ParsedDocument[] {
+    const erpByKey = new Map<string, ParsedDocument>();
+    for (const e of erpDocs) {
+      erpByKey.set(buildDocumentKey(e), e);
+    }
+    return baseDocs.map((doc) => {
+      if (doc.fechaDoc != null) {
+        return doc;
+      }
+      const erp = erpByKey.get(buildDocumentKey(doc));
+      if (!erp?.fechaDoc) {
+        return doc;
+      }
+      return {
+        ...doc,
+        fechaDoc: erp.fechaDoc,
+        rawRowJson: {
+          ...(doc.rawRowJson ?? {}),
+          fechaDocEnrichedFromErp: true,
+        },
+      };
+    });
+  }
+
+  private readonly saldoDiscrepancyEpsilon = 0.99;
+
+  private parseSaldoNumeric(value: string | null | undefined): number | null {
+    if (value == null) {
+      return null;
+    }
+    return parseMoneyArStringToNumber(String(value));
+  }
+
+  /**
+   * Documentos presentes en base y ERP con mismo `documentKey`, donde ambos
+   * tienen saldo numérico y difieren más que `saldoDiscrepancyEpsilon`.
+   * Solo informativo para vista previa; no altera la consolidación.
+   */
+  private collectSaldoDiscrepancies(
+    baseDocs: ParsedDocument[],
+    erpDocs: ParsedDocument[],
+  ): Array<{
+    documentKey: string;
+    clienteId: string;
+    tienda: string;
+    tipoDocumento: string;
+    numeroDocumento: string;
+    saldoBase: string | null;
+    saldoErp: string | null;
+  }> {
+    const erpByKey = new Map<string, ParsedDocument>();
+    for (const e of erpDocs) {
+      erpByKey.set(buildDocumentKey(e), e);
+    }
+    const out: Array<{
+      documentKey: string;
+      clienteId: string;
+      tienda: string;
+      tipoDocumento: string;
+      numeroDocumento: string;
+      saldoBase: string | null;
+      saldoErp: string | null;
+    }> = [];
+    for (const b of baseDocs) {
+      const key = buildDocumentKey(b);
+      const erp = erpByKey.get(key);
+      if (!erp) {
+        continue;
+      }
+      const nb = this.parseSaldoNumeric(b.saldo);
+      const ne = this.parseSaldoNumeric(erp.saldo);
+      if (nb === null || ne === null) {
+        continue;
+      }
+      if (Math.abs(nb - ne) <= this.saldoDiscrepancyEpsilon) {
+        continue;
+      }
+      out.push({
+        documentKey: key,
+        clienteId: b.clienteId,
+        tienda: b.tienda,
+        tipoDocumento: b.tipoDocumento,
+        numeroDocumento: b.numeroDocumento,
+        saldoBase: b.saldo,
+        saldoErp: erp.saldo,
+      });
+    }
+    return out;
+  }
+
   create(createConsolidationDto: CreateConsolidationDto) {
     const entity = this.consolidationsRepository.create(createConsolidationDto);
     return this.consolidationsRepository.save(entity);
@@ -240,15 +338,24 @@ export class ConsolidationsService {
         this.normalizeDocumentAmounts(this.normalizeDocument(doc)),
       );
 
-      const baseMap = new Map<string, (typeof normalizedBaseDocs)[number]>();
-      normalizedBaseDocs.forEach((doc) =>
+      const baseDocsEnrichedFecha = this.enrichBaseFechaFromErp(
+        normalizedBaseDocs,
+        normalizedErpDocs,
+      );
+      const previewSaldoDiscrepancies = this.collectSaldoDiscrepancies(
+        normalizedBaseDocs,
+        normalizedErpDocs,
+      );
+
+      const baseMap = new Map<string, (typeof baseDocsEnrichedFecha)[number]>();
+      baseDocsEnrichedFecha.forEach((doc) =>
         baseMap.set(buildDocumentKey(doc), doc),
       );
 
       const addedDocuments = normalizedErpDocs.filter(
         (doc) => !baseMap.has(buildDocumentKey(doc)),
       );
-      const finalDocumentsRaw = [...normalizedBaseDocs, ...addedDocuments];
+      const finalDocumentsRaw = [...baseDocsEnrichedFecha, ...addedDocuments];
       const finalDocumentsMap = new Map<
         string,
         (typeof finalDocumentsRaw)[number]
@@ -368,6 +475,7 @@ export class ConsolidationsService {
           observaciones: null,
         })),
         previewRemoved: [],
+        previewSaldoDiscrepancies: previewSaldoDiscrepancies.slice(0, 50),
         previewErrors: allErrors.slice(0, 20).map((err) => ({
           sourceFile: err.sourceFile,
           lineNumber: err.lineNumber,
@@ -418,12 +526,21 @@ export class ConsolidationsService {
         this.normalizeDocumentAmounts(this.normalizeDocument(doc)),
       );
 
+      const baseDocsEnrichedFecha = this.enrichBaseFechaFromErp(
+        normalizedBaseDocs,
+        normalizedErpDocs,
+      );
+      const previewSaldoDiscrepancies = this.collectSaldoDiscrepancies(
+        normalizedBaseDocs,
+        normalizedErpDocs,
+      );
+
       const erpDocKeys = new Set<string>();
       normalizedErpDocs.forEach((doc) => erpDocKeys.add(buildDocumentKey(doc)));
 
       const { finalDocuments, removedDocuments } =
         this.filterDocumentsByRemoveRules(
-          normalizedBaseDocs,
+          baseDocsEnrichedFecha,
           erpDocKeys,
           cutoffDate,
         );
@@ -539,6 +656,7 @@ export class ConsolidationsService {
           saldo: doc.saldo,
           observaciones: null,
         })),
+        previewSaldoDiscrepancies: previewSaldoDiscrepancies.slice(0, 50),
         previewErrors: allErrors.slice(0, 20).map((err) => ({
           sourceFile: err.sourceFile,
           lineNumber: err.lineNumber,
@@ -593,15 +711,24 @@ export class ConsolidationsService {
         this.normalizeDocumentAmounts(this.normalizeDocument(doc)),
       );
 
-      const baseMap = new Map<string, (typeof normalizedBaseDocs)[number]>();
-      normalizedBaseDocs.forEach((doc) =>
+      const baseDocsEnrichedFecha = this.enrichBaseFechaFromErp(
+        normalizedBaseDocs,
+        normalizedErpDocs,
+      );
+      const previewSaldoDiscrepancies = this.collectSaldoDiscrepancies(
+        normalizedBaseDocs,
+        normalizedErpDocs,
+      );
+
+      const baseMap = new Map<string, (typeof baseDocsEnrichedFecha)[number]>();
+      baseDocsEnrichedFecha.forEach((doc) =>
         baseMap.set(buildDocumentKey(doc), doc),
       );
 
       const addedDocuments = normalizedErpDocs.filter(
         (doc) => !baseMap.has(buildDocumentKey(doc)),
       );
-      const afterAddRaw = [...normalizedBaseDocs, ...addedDocuments];
+      const afterAddRaw = [...baseDocsEnrichedFecha, ...addedDocuments];
       const afterAddDeduped = new Map<string, (typeof afterAddRaw)[number]>();
       afterAddRaw.forEach((doc) => {
         const key = buildDocumentKey(doc);
@@ -739,6 +866,7 @@ export class ConsolidationsService {
           saldo: doc.saldo,
           observaciones: null,
         })),
+        previewSaldoDiscrepancies: previewSaldoDiscrepancies.slice(0, 50),
         previewErrors: allErrors.slice(0, 20).map((err) => ({
           sourceFile: err.sourceFile,
           lineNumber: err.lineNumber,

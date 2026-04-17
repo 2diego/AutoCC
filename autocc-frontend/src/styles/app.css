@@ -160,6 +160,12 @@
   color: var(--lightBlue);
 }
 
+summary.sectionTitle {
+  cursor: pointer;
+  user-select: none;
+  font-weight: 700;
+}
+
 .sectionHint {
   margin-bottom: 0.5rem;
 }

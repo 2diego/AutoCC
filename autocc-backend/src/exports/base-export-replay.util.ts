@@ -12,6 +12,7 @@ import {
   EXCEL_COL_FECHA,
   fechaDocToExcelSerial,
   shouldApplyAtrasoFormula,
+  shouldLeaveAtrasoColumnEmpty,
 } from './excel-atraso-formula.util';
 import {
   buildDocumentKeyFromParts,
@@ -28,6 +29,7 @@ import {
   applyReplayFirstFourRowStyles,
   applyReplayHeaderLayoutTweaks,
 } from './replay-excel-theming.util';
+import { isFacturaCanceladaSinAtrasoEnExport } from './document-saldo-color.util';
 
 const LINE_SPLIT_REGEX = /\r\n|\n|\r/;
 
@@ -545,10 +547,16 @@ export async function buildReplayWorkbook(
           row.getCell(EXCEL_COL_FECHA).numFmt = 'dd/mm/yyyy';
         }
       }
-      if (cc && shouldApplyAtrasoFormula(cc)) {
-        row.getCell(EXCEL_COL_ATRASO).value = {
-          formula: buildAtrasoFormulaExcel(excelRowNum),
-        };
+      if (cc && shouldLeaveAtrasoColumnEmpty(cc)) {
+        row.getCell(EXCEL_COL_ATRASO).value = '';
+      } else if (cc && shouldApplyAtrasoFormula(cc)) {
+        if (isFacturaCanceladaSinAtrasoEnExport(cc, cells)) {
+          row.getCell(EXCEL_COL_ATRASO).value = '';
+        } else {
+          row.getCell(EXCEL_COL_ATRASO).value = {
+            formula: buildAtrasoFormulaExcel(excelRowNum),
+          };
+        }
       }
     }
   }

@@ -2,7 +2,10 @@ import type { Worksheet } from 'exceljs';
 import type { CcCurrent } from '../cc-current/entities/cc-current.entity';
 import {
   computeSaldoColor,
+  computeSaldoColorReciboSaldoAFavor,
   isFacturaONotaDebito,
+  isReciboDocument,
+  type SaldoColorDecision,
 } from './document-saldo-color.util';
 
 /** Misma grilla que el replay: A vacío, B comprobante, C fecha, D importe, E saldo, F atraso, G recibo, H importe(s) recibo. */
@@ -31,7 +34,7 @@ export function applySaldoReceiptPaymentColors(
     if (!dk) continue;
 
     const cc = byDocKey.get(dk);
-    if (!cc || !isFacturaONotaDebito(cc)) continue;
+    if (!cc) continue;
 
     const cells = dataRows[i];
     if (cells.length < COL_IMPORTE_RECIBO) continue;
@@ -41,7 +44,12 @@ export function applySaldoReceiptPaymentColors(
     const colG = cells[COL_RECIBO - 1] ?? '';
     const colH = cells[COL_IMPORTE_RECIBO - 1] ?? '';
 
-    const decision = computeSaldoColor(colD, colE, colG, colH);
+    let decision: SaldoColorDecision = null;
+    if (isFacturaONotaDebito(cc)) {
+      decision = computeSaldoColor(colD, colE, colG, colH);
+    } else if (isReciboDocument(cc)) {
+      decision = computeSaldoColorReciboSaldoAFavor(colE, colG, colH);
+    }
     if (!decision) continue;
 
     const excelRow = ws.getRow(i + 1);
