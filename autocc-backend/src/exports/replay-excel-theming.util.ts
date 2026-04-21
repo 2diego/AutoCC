@@ -111,14 +111,16 @@ function mergeAndCenter(ws: Worksheet, range: string): void {
 
 /**
  * Ajustes de layout para encabezado del replay descargable.
- * - TOTVS: combinar y centrar C1:J1
- * - CEOS: combinar y centrar A1:D1; fondo negro en A3 y B3
+ * - TOTVS: combinar y centrar C1:J1, congelar filas 1 a 4, poner fecha actual en A1
+ * - CEOS: combinar y centrar A1:D1, congelar filas 1 a 3, poner fecha actual en A2, fondo negro en A3 y B3
  */
 export function applyReplayHeaderLayoutTweaks(
   ws: Worksheet,
   erpSource: ErpSource,
 ): void {
   if (erpSource === ErpSource.CEOS) {
+    ws.views = [{ state: 'frozen', ySplit: 3 }];
+    ws.getCell('A2').value = { formula: 'TODAY()' };
     mergeAndCenter(ws, 'A1:D1');
     ws.getCell('A3').fill = {
       type: 'pattern',
@@ -133,6 +135,8 @@ export function applyReplayHeaderLayoutTweaks(
     return;
   }
 
+  ws.views = [{ state: 'frozen', ySplit: 4 }];
+  ws.getCell('A1').value = { formula: 'TODAY()' };
   mergeAndCenter(ws, 'C1:J1');
 }
 
