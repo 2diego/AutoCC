@@ -23,7 +23,10 @@ import {
   type CeosBaseStepResult,
   type TotvsBaseStepResult,
 } from '../consolidations/consolidation-parser.util';
-import { applySaldoReceiptPaymentColors } from './excel-saldo-receipt-fill.util';
+import {
+  applySaldoErpMenorQueArchivoBaseBackground,
+  applySaldoReceiptPaymentColors,
+} from './excel-saldo-receipt-fill.util';
 import {
   applyClientHeaderRowBold,
   applyReplayFirstFourRowStyles,
@@ -570,6 +573,7 @@ export async function buildReplayWorkbook(
   }
 
   applySaldoReceiptPaymentColors(ws, dataRows, docRowKeys, byDocKey);
+  applySaldoErpMenorQueArchivoBaseBackground(ws, docRowKeys, byDocKey);
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

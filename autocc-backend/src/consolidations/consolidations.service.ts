@@ -81,7 +81,7 @@ export class ConsolidationsService {
   }
 
   /**
-   * Reglas de “eliminar”: documentos con fechaDoc &lt; corte se mantienen solo si la clave está en el listado ERP.
+   * Reglas de “eliminar”: documentos con fechaDoc anterior o igual a la fecha de corte se mantienen solo si la clave está en el listado ERP.
    */
   private filterDocumentsByRemoveRules(
     documents: ParsedDocument[],
@@ -277,6 +277,46 @@ export class ConsolidationsService {
     return out;
   }
 
+  /**
+   * Entre documentos con discrepancia de saldo (base vs ERP), devuelve las claves
+   * donde el saldo del ERP es estrictamente menor que el del archivo base.
+   * Se persiste en `rawRowJson` para resaltar la celda Saldo en el Excel exportado.
+   */
+  private documentKeysWhereErpSaldoLowerThanBase(
+    discrepancies: Array<{
+      documentKey: string;
+      saldoBase: string | null;
+      saldoErp: string | null;
+    }>,
+  ): Set<string> {
+    const keys = new Set<string>();
+    for (const d of discrepancies) {
+      const nb = this.parseSaldoNumeric(d.saldoBase);
+      const ne = this.parseSaldoNumeric(d.saldoErp);
+      if (nb === null || ne === null) {
+        continue;
+      }
+      if (ne < nb) {
+        keys.add(d.documentKey);
+      }
+    }
+    return keys;
+  }
+
+  private mergeRawJsonSaldoErpMenorFlag(
+    doc: ParsedDocument,
+    erpSaldoLowerThanBaseKeys: Set<string>,
+  ): Record<string, unknown> | null {
+    const key = buildDocumentKey(doc);
+    const base = { ...(doc.rawRowJson ?? {}) };
+    if (erpSaldoLowerThanBaseKeys.has(key)) {
+      base['saldoErpMenorQueArchivoBase'] = true;
+    } else {
+      delete base['saldoErpMenorQueArchivoBase'];
+    }
+    return Object.keys(base).length > 0 ? base : null;
+  }
+
   create(createConsolidationDto: CreateConsolidationDto) {
     const entity = this.consolidationsRepository.create(createConsolidationDto);
     return this.consolidationsRepository.save(entity);
@@ -346,6 +386,8 @@ export class ConsolidationsService {
         normalizedBaseDocs,
         normalizedErpDocs,
       );
+      const erpSaldoLowerThanBaseKeys =
+        this.documentKeysWhereErpSaldoLowerThanBase(previewSaldoDiscrepancies);
 
       const baseMap = new Map<string, (typeof baseDocsEnrichedFecha)[number]>();
       baseDocsEnrichedFecha.forEach((doc) =>
@@ -432,7 +474,10 @@ export class ConsolidationsService {
               fechaDoc: this.toDateOnly(doc.fechaDoc),
               valor: doc.valor,
               saldo: doc.saldo,
-              rawRowJson: doc.rawRowJson,
+              rawRowJson: this.mergeRawJsonSaldoErpMenorFlag(
+                doc,
+                erpSaldoLowerThanBaseKeys,
+              ),
               lastConsolidation: consolidation,
             }),
           ),
@@ -534,6 +579,8 @@ export class ConsolidationsService {
         normalizedBaseDocs,
         normalizedErpDocs,
       );
+      const erpSaldoLowerThanBaseKeys =
+        this.documentKeysWhereErpSaldoLowerThanBase(previewSaldoDiscrepancies);
 
       const erpDocKeys = new Set<string>();
       normalizedErpDocs.forEach((doc) => erpDocKeys.add(buildDocumentKey(doc)));
@@ -611,7 +658,10 @@ export class ConsolidationsService {
               fechaDoc: this.toDateOnly(doc.fechaDoc),
               valor: doc.valor,
               saldo: doc.saldo,
-              rawRowJson: doc.rawRowJson,
+              rawRowJson: this.mergeRawJsonSaldoErpMenorFlag(
+                doc,
+                erpSaldoLowerThanBaseKeys,
+              ),
               lastConsolidation: consolidation,
             }),
           ),
@@ -719,6 +769,8 @@ export class ConsolidationsService {
         normalizedBaseDocs,
         normalizedErpDocs,
       );
+      const erpSaldoLowerThanBaseKeys =
+        this.documentKeysWhereErpSaldoLowerThanBase(previewSaldoDiscrepancies);
 
       const baseMap = new Map<string, (typeof baseDocsEnrichedFecha)[number]>();
       baseDocsEnrichedFecha.forEach((doc) =>
@@ -814,7 +866,10 @@ export class ConsolidationsService {
               fechaDoc: this.toDateOnly(doc.fechaDoc),
               valor: doc.valor,
               saldo: doc.saldo,
-              rawRowJson: doc.rawRowJson,
+              rawRowJson: this.mergeRawJsonSaldoErpMenorFlag(
+                doc,
+                erpSaldoLowerThanBaseKeys,
+              ),
               lastConsolidation: consolidation,
             }),
           ),
