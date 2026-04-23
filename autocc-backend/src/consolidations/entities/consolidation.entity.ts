@@ -1,5 +1,6 @@
 import {
   Column,
+  type ColumnType,
   CreateDateColumn,
   Entity,
   OneToMany,
@@ -19,6 +20,9 @@ export enum ConsolidationStatus {
   OK = 'ok',
   FAILED = 'failed',
 }
+
+const largeTextColumnType: ColumnType =
+  process.env.DB_TYPE?.toLowerCase() === 'postgres' ? 'text' : 'longtext';
 
 @Entity('consolidations')
 export class Consolidation {
@@ -59,8 +63,12 @@ export class Consolidation {
   @Column({ type: 'int', default: 0 })
   errorCount: number;
 
-  /** Texto UTF-8 del archivo base usado en la última consolidación OK (para export fiel al layout). */
-  @Column({ type: 'longtext', nullable: true })
+  /**
+   * Texto UTF-8 del archivo base usado en la última consolidación OK.
+   * MySQL: `longtext` para archivos base grandes.
+   * Postgres: `text` (sin `length`, TypeORM no lo permite en este tipo).
+   */
+  @Column({ type: largeTextColumnType, nullable: true })
   baseFileText: string | null;
 
   @OneToMany(() => CcCurrent, (ccCurrent) => ccCurrent.lastConsolidation)

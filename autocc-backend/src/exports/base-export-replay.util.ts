@@ -5,6 +5,7 @@ import { ErpSource } from '../consolidations/entities/consolidation.entity';
 import {
   formatMoneyArDisplay,
   looksLikeDiasAtrasoTotvs,
+  parseMoneyArStringToNumber,
 } from '../common/utils/format-money-ar-display.util';
 import {
   buildAtrasoFormulaExcel,
@@ -35,6 +36,8 @@ import {
 import { isFacturaCanceladaSinAtrasoEnExport } from './document-saldo-color.util';
 
 const LINE_SPLIT_REGEX = /\r\n|\n|\r/;
+const EXCEL_COL_IMPORTE = 4;
+const EXCEL_COL_SALDO = 5;
 
 const buildCcRowDocKey = (row: CcCurrent): string =>
   buildDocumentKeyFromParts(
@@ -619,7 +622,21 @@ export async function buildReplayWorkbook(
     const excelRowNum = i + 1;
     const row = ws.getRow(excelRowNum);
     for (let c = 0; c < cells.length; c++) {
-      row.getCell(c + 1).value = cells[c];
+      const excelCol = c + 1;
+      const rawValue = cells[c];
+      const cell = row.getCell(excelCol);
+      if (excelCol === EXCEL_COL_IMPORTE || excelCol === EXCEL_COL_SALDO) {
+        const parsed = parseMoneyArStringToNumber(rawValue);
+        if (parsed !== null) {
+          cell.value = parsed;
+          // Formato numérico para que Excel pueda sumar/filtrar por importe/saldo.
+          cell.numFmt = '#,##0.00';
+        } else {
+          cell.value = rawValue;
+        }
+      } else {
+        cell.value = rawValue;
+      }
     }
     if (dk) {
       const cc = byDocKey.get(dk);
