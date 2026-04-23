@@ -12,6 +12,7 @@ import {
   EXCEL_COL_FECHA,
   fechaDocToExcelSerial,
   shouldApplyAtrasoFormula,
+  shouldLeaveAtrasoColumnEmpty,
 } from './excel-atraso-formula.util';
 import {
   buildDocumentKeyFromParts,
@@ -22,12 +23,16 @@ import {
   type CeosBaseStepResult,
   type TotvsBaseStepResult,
 } from '../consolidations/consolidation-parser.util';
-import { applySaldoReceiptPaymentColors } from './excel-saldo-receipt-fill.util';
+import {
+  applySaldoErpMenorQueArchivoBaseBackground,
+  applySaldoReceiptPaymentColors,
+} from './excel-saldo-receipt-fill.util';
 import {
   applyClientHeaderRowBold,
   applyReplayFirstFourRowStyles,
   applyReplayHeaderLayoutTweaks,
 } from './replay-excel-theming.util';
+import { isFacturaCanceladaSinAtrasoEnExport } from './document-saldo-color.util';
 
 const LINE_SPLIT_REGEX = /\r\n|\n|\r/;
 
@@ -188,7 +193,7 @@ function buildSyntheticClientHeaderLine(rows: CcCurrent[]): string {
 
 const getClientSortLabelFromHeaderLine = (line: string): string => {
   const normalized = line.replace(/\u2013|\u2014/g, '-');
-  const m = normalized.match(/cliente[^-]*-\s*\d{1,2}\s*-\s*([^;]+)/i);
+  const m = normalized.match(/cliente[^-]*-\s*\d+\s*-\s*([^;]+)/i);
   return m?.[1]?.trim() ?? '';
 };
 
@@ -284,6 +289,74 @@ function sortCcRowsForExport(a: CcCurrent, b: CcCurrent): number {
   const ta = `${a.tipoDocumento}|${a.numeroDocumento}`;
   const tb = `${b.tipoDocumento}|${b.numeroDocumento}`;
   return ta.localeCompare(tb, 'es');
+}
+
+function sortClientBlocks(
+  dataRows: string[][],
+  docRowKeys: (string | null)[],
+  clientHeaderRowFlags: boolean[],
+  clientHeaderKeys: (string | null)[],
+  compareClientKeys: (a: string, b: string) => number,
+): void {
+  const firstHeaderIndex = clientHeaderRowFlags.findIndex(Boolean);
+  if (firstHeaderIndex < 0) return;
+
+  type Block = {
+    rows: string[][];
+    docKeys: (string | null)[];
+    headerFlags: boolean[];
+    headerKeys: (string | null)[];
+    clientKey: string;
+  };
+  const blocks: Block[] = [];
+
+  let i = firstHeaderIndex;
+  while (i < dataRows.length) {
+    if (!clientHeaderRowFlags[i] || !clientHeaderKeys[i]) {
+      i += 1;
+      continue;
+    }
+    const start = i;
+    let end = dataRows.length;
+    for (let j = i + 1; j < dataRows.length; j += 1) {
+      if (clientHeaderRowFlags[j] && clientHeaderKeys[j]) {
+        end = j;
+        break;
+      }
+    }
+    blocks.push({
+      rows: dataRows.slice(start, end),
+      docKeys: docRowKeys.slice(start, end),
+      headerFlags: clientHeaderRowFlags.slice(start, end),
+      headerKeys: clientHeaderKeys.slice(start, end),
+      clientKey: clientHeaderKeys[start] as string,
+    });
+    i = end;
+  }
+
+  if (blocks.length < 2) return;
+  blocks.sort((a, b) => compareClientKeys(a.clientKey, b.clientKey));
+
+  const preRows = dataRows.slice(0, firstHeaderIndex);
+  const preDocKeys = docRowKeys.slice(0, firstHeaderIndex);
+  const preFlags = clientHeaderRowFlags.slice(0, firstHeaderIndex);
+  const preHeaderKeys = clientHeaderKeys.slice(0, firstHeaderIndex);
+
+  dataRows.length = 0;
+  docRowKeys.length = 0;
+  clientHeaderRowFlags.length = 0;
+  clientHeaderKeys.length = 0;
+
+  dataRows.push(...preRows);
+  docRowKeys.push(...preDocKeys);
+  clientHeaderRowFlags.push(...preFlags);
+  clientHeaderKeys.push(...preHeaderKeys);
+  for (const block of blocks) {
+    dataRows.push(...block.rows);
+    docRowKeys.push(...block.docKeys);
+    clientHeaderRowFlags.push(...block.headerFlags);
+    clientHeaderKeys.push(...block.headerKeys);
+  }
 }
 
 /**
@@ -515,6 +588,18 @@ export async function buildReplayWorkbook(
     clientHeaderKeys.splice(insertAt, 0, ...blockHeaderKeys);
   }
 
+  // TOTVS: normalizar el orden final del replay — bloques de cliente por nombre (inyecciones / omisiones pueden desalinearlo respecto del requisito de export).
+  // CEOS: mantener orden del base + inserción ERP-only (reorden global de bloques rompe el layout).
+  if (erpSource === ErpSource.TOTVS) {
+    sortClientBlocks(
+      dataRows,
+      docRowKeys,
+      clientHeaderRowFlags,
+      clientHeaderKeys,
+      compareClientKeys,
+    );
+  }
+
   let maxCols = 0;
   for (const r of dataRows) {
     maxCols = Math.max(maxCols, r.length);
@@ -545,10 +630,16 @@ export async function buildReplayWorkbook(
           row.getCell(EXCEL_COL_FECHA).numFmt = 'dd/mm/yyyy';
         }
       }
-      if (cc && shouldApplyAtrasoFormula(cc)) {
-        row.getCell(EXCEL_COL_ATRASO).value = {
-          formula: buildAtrasoFormulaExcel(excelRowNum),
-        };
+      if (cc && shouldLeaveAtrasoColumnEmpty(cc)) {
+        row.getCell(EXCEL_COL_ATRASO).value = '';
+      } else if (cc && shouldApplyAtrasoFormula(cc)) {
+        if (isFacturaCanceladaSinAtrasoEnExport(cc, cells)) {
+          row.getCell(EXCEL_COL_ATRASO).value = '';
+        } else {
+          row.getCell(EXCEL_COL_ATRASO).value = {
+            formula: buildAtrasoFormulaExcel(excelRowNum),
+          };
+        }
       }
     }
   }
@@ -562,6 +653,7 @@ export async function buildReplayWorkbook(
   }
 
   applySaldoReceiptPaymentColors(ws, dataRows, docRowKeys, byDocKey);
+  applySaldoErpMenorQueArchivoBaseBackground(ws, docRowKeys, byDocKey);
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

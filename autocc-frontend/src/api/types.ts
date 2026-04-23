@@ -1,5 +1,16 @@
 export type ErpSource = 'CEOS' | 'TOTVS'
 
+/** Vista previa: mismo documento en base y ERP, saldos numéricos distintos (solo informativo). */
+export type PreviewSaldoDiscrepancyItem = {
+  documentKey: string
+  clienteId: string
+  tienda: string
+  tipoDocumento: string
+  numeroDocumento: string
+  saldoBase: string | null
+  saldoErp: string | null
+}
+
 export type UserRole = 'admin' | 'operator'
 
 export type AuthUser = {
@@ -49,6 +60,7 @@ export type AddDocumentsFromErpResponse = {
     numeroDocumento: string
     fechaDoc: string | null
   }>
+  previewSaldoDiscrepancies?: PreviewSaldoDiscrepancyItem[]
   previewErrors?: Array<{
     sourceFile: string
     lineNumber: number
@@ -91,6 +103,7 @@ export type FullConsolidationFromErpResponse = {
     saldo: string | null
     observaciones: string | null
   }>
+  previewSaldoDiscrepancies?: PreviewSaldoDiscrepancyItem[]
   previewErrors?: Array<{
     sourceFile: string
     lineNumber: number
@@ -126,6 +139,7 @@ export type RemoveDocumentsFromErpResponse = {
     saldo: string | null
     observaciones: string | null
   }>
+  previewSaldoDiscrepancies?: PreviewSaldoDiscrepancyItem[]
   previewErrors?: Array<{
     sourceFile: string
     lineNumber: number

@@ -350,6 +350,29 @@ const parseCeosBase = (content: string): ParseResult => {
     );
     if (fechaCheck.error) {
       errors.push(fechaCheck.error);
+      const valor = parseMoneyToDecimal(parts[3]);
+      const saldo = parseMoneyToDecimal(parts[4]) ?? valor;
+      documents.push({
+        erpSource: ErpSource.CEOS,
+        clienteId: currentClient,
+        tienda: currentStore || '01',
+        clienteNombre: currentClientName || undefined,
+        localidad: currentLocalidad || undefined,
+        tipoDocumento: normalized.tipoDocumento,
+        numeroDocumento: normalized.numeroDocumento,
+        fechaDoc: null,
+        valor,
+        saldo,
+        rawRowJson: {
+          sourceFile: 'BASE',
+          raw: line,
+          parsePreserved: true,
+          parseErrorCode: fechaCheck.error.errorCode,
+          fechaDocRaw: parts[2] ?? undefined,
+          nombreCliente: currentClientName || undefined,
+          localidad: currentLocalidad || undefined,
+        },
+      });
       return;
     }
     const fechaDoc = fechaCheck.date;
@@ -547,6 +570,29 @@ const parseTotvsBase = (content: string): ParseResult => {
     );
     if (fechaCheck.error) {
       errors.push(fechaCheck.error);
+      const valor = parseMoneyToDecimal(parts[3]);
+      const saldo = parseMoneyToDecimal(parts[4]) ?? valor;
+      documents.push({
+        erpSource: ErpSource.TOTVS,
+        clienteId: currentClient,
+        tienda: currentStore,
+        clienteNombre: currentClientName || undefined,
+        localidad: currentLocalidad || undefined,
+        tipoDocumento,
+        numeroDocumento,
+        fechaDoc: null,
+        valor,
+        saldo,
+        rawRowJson: {
+          sourceFile: 'BASE',
+          raw: line,
+          parsePreserved: true,
+          parseErrorCode: fechaCheck.error.errorCode,
+          fechaDocRaw: parts[2] ?? undefined,
+          nombreCliente: currentClientName || undefined,
+          localidad: currentLocalidad || undefined,
+        },
+      });
       return;
     }
     const fechaDoc = fechaCheck.date;

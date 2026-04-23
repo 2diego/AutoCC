@@ -1,16 +1,38 @@
 import type { CcCurrent } from '../cc-current/entities/cc-current.entity';
 import { ErpSource } from '../consolidations/entities/consolidation.entity';
+import { isReciboDocument } from './document-saldo-color.util';
 
 /** Layout replay: col A vacío implícito en parts[0], B=comprobante, C=fecha, D-E montos, F=atraso (fórmula). */
 export const EXCEL_COL_FECHA = 3;
 export const EXCEL_COL_ATRASO = 6;
 
+/** Nota de crédito: saldo a favor, no corresponde columna Atraso (F). */
+function isNotaCreditoDocument(cc: CcCurrent): boolean {
+  const t = cc.tipoDocumento.toUpperCase();
+  const erp = cc.erpSource.toUpperCase() as ErpSource;
+  if (erp === ErpSource.CEOS) {
+    return t === 'C';
+  }
+  if (erp === ErpSource.TOTVS) {
+    return t === 'NCC';
+  }
+  return false;
+}
+
 /**
- * Facturas / notas a las que aplica días de atraso desde fecha documento.
- * CEOS recibo = R; TOTVS recibo = RA.
+ * Recibos y notas de crédito: la celda F debe quedar vacía (sin fórmula ni valor heredado del base).
+ */
+export function shouldLeaveAtrasoColumnEmpty(cc: CcCurrent): boolean {
+  return isReciboDocument(cc) || isNotaCreditoDocument(cc);
+}
+
+/**
+ * Facturas / ND a las que aplica días de atraso desde fecha documento.
+ * Excluye recibos (R/RA), notas de crédito (CEOS `C`, TOTVS `NCC`) y filas sin fecha.
  */
 export function shouldApplyAtrasoFormula(cc: CcCurrent): boolean {
   if (cc.fechaDoc == null) return false;
+  if (isNotaCreditoDocument(cc)) return false;
   const t = cc.tipoDocumento.toUpperCase();
   const erp = cc.erpSource.toUpperCase() as ErpSource;
   if (erp === ErpSource.CEOS) {

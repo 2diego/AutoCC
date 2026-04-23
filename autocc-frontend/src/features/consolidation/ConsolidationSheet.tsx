@@ -416,6 +416,7 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
                   <p className="statItem">
                     Eliminados: {result.stats.removedDocs ?? 0}
                   </p>
+                  <p className="statItem">Dif. de saldos: {result.previewSaldoDiscrepancies?.length ?? 0}</p>
                   <p className="statItem">Errores: {result.stats.errors}</p>
                 </div>
               </section>
@@ -423,27 +424,49 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
               {postOpDownloadSection(erpSource)}
 
               <section className="surfaceSection">
-                <h3 className="sectionTitle">Vista previa (documentos agregados)</h3>
-                <pre className="preJson">
-                  {JSON.stringify(result.previewAdded, null, 2)}
-                </pre>
+                <details>
+                  <summary className="sectionTitle">Vista previa docs agregados</summary>
+                  <pre className="preJson">
+                    {JSON.stringify(result.previewAdded, null, 2)}
+                  </pre>
+                </details>
               </section>
 
               <section className="surfaceSection">
-                <h3 className="sectionTitle">Vista previa (current, primeros)</h3>
-                <pre className="preJson">
-                  {JSON.stringify(result.previewCurrent, null, 2)}
-                </pre>
+                <details>
+                  <summary className="sectionTitle">Vista previa resultado</summary>
+                  <pre className="preJson">
+                    {JSON.stringify(result.previewCurrent, null, 2)}
+                  </pre>
+                </details>
+              </section>
+
+              <section className="surfaceSection">
+                <h3 className="sectionTitle">Diferencias de saldos (base vs ERP)</h3>
+                <p className="muted sectionHint">
+                  Mismo comprobante en ambos archivos: solo aparecen filas donde el saldo
+                  numérico no coincide. No cambia la consolidación; es aviso para revisión
+                  manual (muestra de hasta 50).
+                </p>
+                {(result.previewSaldoDiscrepancies ?? []).length === 0 ? (
+                  <p className="muted">No se detectaron discrepancias en esta corrida.</p>
+                ) : (
+                  <pre className="preJson">
+                    {JSON.stringify(result.previewSaldoDiscrepancies, null, 2)}
+                  </pre>
+                )}
               </section>
 
               {result.previewRemoved && result.previewRemoved.length > 0 ? (
                 <section className="surfaceSection">
-                  <h3 className="sectionTitle">
-                    Vista previa (documentos eliminados)
-                  </h3>
-                  <pre className="preJson">
-                    {JSON.stringify(result.previewRemoved, null, 2)}
-                  </pre>
+                  <details>
+                    <summary className="sectionTitle">
+                      Vista previa docs eliminados
+                    </summary>
+                    <pre className="preJson">
+                      {JSON.stringify(result.previewRemoved, null, 2)}
+                    </pre>
+                  </details>
                 </section>
               ) : null}
 
@@ -558,10 +581,28 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
               {postOpDownloadSection(erpSource)}
 
               <section className="surfaceSection">
-                <h3 className="sectionTitle">Vista previa (documentos eliminados)</h3>
-                <pre className="preJson">
-                  {JSON.stringify(removeResult.previewRemoved, null, 2)}
-                </pre>
+                <details>
+                  <summary className="sectionTitle">Vista previa docs eliminados</summary>
+                  <pre className="preJson">
+                    {JSON.stringify(removeResult.previewRemoved, null, 2)}
+                  </pre>
+                </details>
+              </section>
+
+              <section className="surfaceSection">
+                <h3 className="sectionTitle">Diferencias de saldos (base vs ERP)</h3>
+                <p className="muted sectionHint">
+                  Mismo comprobante en ambos archivos: solo aparecen filas donde el saldo
+                  numérico no coincide. No cambia la consolidación; es aviso para revisión
+                  manual (muestra de hasta 50).
+                </p>
+                {(removeResult.previewSaldoDiscrepancies ?? []).length === 0 ? (
+                  <p className="muted">No se detectaron discrepancias en esta corrida.</p>
+                ) : (
+                  <pre className="preJson">
+                    {JSON.stringify(removeResult.previewSaldoDiscrepancies, null, 2)}
+                  </pre>
+                )}
               </section>
 
               {removeResult.previewErrors &&
@@ -675,6 +716,7 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
                   <p className="statItem">
                     Eliminados: {fullResult.stats.removedDocs}
                   </p>
+                  <p className="statItem">Dif. de saldos: {fullResult.previewSaldoDiscrepancies?.length ?? 0}</p>
                   <p className="statItem">Errores: {fullResult.stats.errors}</p>
                 </div>
               </section>
@@ -682,24 +724,45 @@ export function ConsolidationSheet({ open, onClose }: ConsolidationSheetProps) {
               {postOpDownloadSection(erpSource)}
 
               <section className="surfaceSection">
-                <h3 className="sectionTitle">Vista previa (agregados)</h3>
-                <pre className="preJson">
-                  {JSON.stringify(fullResult.previewAdded, null, 2)}
-                </pre>
+                <details>
+                  <summary className="sectionTitle">Vista previa docs agregados</summary>
+                  <pre className="preJson">
+                    {JSON.stringify(fullResult.previewAdded, null, 2)}
+                  </pre>
+                </details>
+              </section>
+            
+              <section className="surfaceSection">
+                <details>
+                  <summary className="sectionTitle">Vista previa docs eliminados</summary>
+                  <pre className="preJson">
+                    {JSON.stringify(fullResult.previewRemoved, null, 2)}
+                  </pre>
+                </details>
               </section>
 
               <section className="surfaceSection">
-                <h3 className="sectionTitle">Vista previa (eliminados)</h3>
-                <pre className="preJson">
-                  {JSON.stringify(fullResult.previewRemoved, null, 2)}
-                </pre>
+                <details>
+                  <summary className="sectionTitle">Vista previa resultado</summary>
+                  <pre className="preJson">
+                    {JSON.stringify(fullResult.previewCurrent, null, 2)}
+                  </pre>
+                </details>
               </section>
 
               <section className="surfaceSection">
-                <h3 className="sectionTitle">Vista previa (resultado, primeros)</h3>
-                <pre className="preJson">
-                  {JSON.stringify(fullResult.previewCurrent, null, 2)}
-                </pre>
+                <h3 className="sectionTitle">Diferencias de saldos (base vs ERP)</h3>
+                <p className="muted sectionHint">
+                  Mismo comprobante en ambos archivos: solo aparecen filas donde el saldo
+                  numérico no coincide. No cambia la consolidación (Muestra hasta 50).
+                </p>
+                {(fullResult.previewSaldoDiscrepancies ?? []).length === 0 ? (
+                  <p className="muted">No se detectaron discrepancias en esta corrida.</p>
+                ) : (
+                  <pre className="preJson">
+                    {JSON.stringify(fullResult.previewSaldoDiscrepancies, null, 2)}
+                  </pre>
+                )}
               </section>
 
               {fullResult.previewErrors && fullResult.previewErrors.length > 0 ? (

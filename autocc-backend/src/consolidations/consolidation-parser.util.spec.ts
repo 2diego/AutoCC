@@ -213,10 +213,30 @@ describe('consolidation parser fixtures', () => {
     ].join('\n');
 
     const result = parseBaseFile(ErpSource.TOTVS, content);
-    expect(result.documents.length).toBe(0);
+    expect(result.documents.length).toBe(1);
+    const preserved = result.documents[0];
+    expect(preserved?.rawRowJson?.['parsePreserved']).toBe(true);
+    expect(preserved?.fechaDoc).toBeNull();
     expect(
       result.errors.some((e) => e.errorCode === 'INVALID_DOCUMENT_DATE_FORMAT'),
     ).toBe(true);
+  });
+
+  it('preserves CEOS base document row when document date is missing', () => {
+    const content = [
+      'Cliente    :30294  - 01 - TEST              ;;;;;;;;;;;;;;',
+      ';R 6A051713;;-1.000,00;-1.000,00;;;;;;;;',
+    ].join('\n');
+
+    const result = parseBaseFile(ErpSource.CEOS, content);
+    expect(
+      result.errors.some((e) => e.errorCode === 'MISSING_DOCUMENT_DATE'),
+    ).toBe(true);
+    expect(result.documents).toHaveLength(1);
+    expect(result.documents[0]?.tipoDocumento).toBe('R');
+    expect(result.documents[0]?.numeroDocumento).toBe('6A051713');
+    expect(result.documents[0]?.fechaDoc).toBeNull();
+    expect(result.documents[0]?.rawRowJson?.['parsePreserved']).toBe(true);
   });
 
   it('parses TOTVS incremental emission date from real line format', () => {
