@@ -26,32 +26,19 @@ export class ExportsService {
   private async loadCurrentRowsDateSafe(
     erpSource: string,
   ): Promise<CcCurrent[]> {
-    const rowsRaw: unknown = await this.ccCurrentRepository.query(
-      `
-      SELECT
-        id,
-        erpSource,
-        clienteId,
-        tienda,
-        tipoDocumento,
-        numeroDocumento,
-        DATE_FORMAT(fechaDoc, '%Y-%m-%d') AS fechaDoc,
-        valor,
-        saldo,
-        rawRowJson,
-        observaciones,
-        motivoDeuda
-      FROM cc_current
-      WHERE erpSource = ?
-      ORDER BY tienda ASC, fechaDoc ASC, tipoDocumento ASC, numeroDocumento ASC
-      `,
-      [erpSource],
-    );
-    const rows = Array.isArray(rowsRaw)
-      ? (rowsRaw as Record<string, unknown>[])
-      : [];
+    // Evitar SQL específico de MySQL (DATE_FORMAT) para mantener compatibilidad
+    // con Postgres/Neon sin alterar el orden ni los datos funcionales del export.
+    const rows = await this.ccCurrentRepository.find({
+      where: { erpSource },
+      order: {
+        tienda: 'ASC',
+        fechaDoc: 'ASC',
+        tipoDocumento: 'ASC',
+        numeroDocumento: 'ASC',
+      },
+    });
 
-    return rows.map((row: Record<string, unknown>) => ({
+    return rows.map((row) => ({
       ...row,
       rawRowJson:
         typeof row.rawRowJson === 'string'
