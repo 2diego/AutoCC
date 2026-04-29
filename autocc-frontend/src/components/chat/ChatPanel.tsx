@@ -227,7 +227,7 @@ export function ChatPanel({ userName }: { userName: string }) {
       setPendErp(erp)
       if (list.length === 0) {
         pushBot(
-          'No hay comprobantes pendientes con esos criterios (recordá: solo facturas/ND con saldo pendiente y sin observación).',
+          'No hay comprobantes pendientes con esos criterios (solo facturas/ND con saldo pendiente).',
         )
         setStep('menu')
         return
@@ -608,7 +608,7 @@ export function ChatPanel({ userName }: { userName: string }) {
         >
           <p className={styles.flowHint}>
             Usá el botón o enviá{' '}
-            <strong>0</strong> en el mensaje para volver al menú.
+            <strong>0</strong> para volver al menú.
           </p>
           <button
             type="button"
