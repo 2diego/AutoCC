@@ -181,8 +181,9 @@ export class ConsolidationsService {
   }
 
   /**
-   * Si el base no tiene `fechaDoc` pero el mismo documento en el ERP sí,
-   * copia la fecha del ERP (misma clave) sin tocar el resto del registro del base.
+   * Si el mismo documento existe en base y ERP (misma clave), prioriza la fecha del ERP:
+   * - si base no tiene `fechaDoc` y ERP sí, la completa;
+   * - si ambas existen y difieren, sobrescribe con la del ERP.
    */
   private enrichBaseFechaFromErp(
     baseDocs: ParsedDocument[],
@@ -193,11 +194,13 @@ export class ConsolidationsService {
       erpByKey.set(buildDocumentKey(e), e);
     }
     return baseDocs.map((doc) => {
-      if (doc.fechaDoc != null) {
-        return doc;
-      }
       const erp = erpByKey.get(buildDocumentKey(doc));
       if (!erp?.fechaDoc) {
+        return doc;
+      }
+      const baseDateIso = doc.fechaDoc?.toISOString().slice(0, 10) ?? null;
+      const erpDateIso = erp.fechaDoc.toISOString().slice(0, 10);
+      if (baseDateIso === erpDateIso) {
         return doc;
       }
       return {
@@ -205,7 +208,12 @@ export class ConsolidationsService {
         fechaDoc: erp.fechaDoc,
         rawRowJson: {
           ...(doc.rawRowJson ?? {}),
-          fechaDocEnrichedFromErp: true,
+          ...(doc.fechaDoc == null
+            ? { fechaDocEnrichedFromErp: true }
+            : {
+                fechaDocOverriddenFromErp: true,
+                fechaDocBaseOriginal: baseDateIso,
+              }),
         },
       };
     });

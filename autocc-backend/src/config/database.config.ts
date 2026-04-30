@@ -46,6 +46,8 @@ function buildMysqlConfig(): TypeOrmModuleOptions {
     synchronize: synchronizeEnabled,
     logging: loggingEnabled,
     charset: 'utf8mb4',
+    // Evita corrimientos por timezone en columnas DATE (día sin hora).
+    dateStrings: ['DATE'],
     timezone: process.env.DB_TIMEZONE ?? 'Z',
   };
 }
