@@ -215,7 +215,6 @@ export class CcCurrentService {
     const qNorm = q?.trim() ? normalizeSearchText(q) : '';
     for (const row of rows) {
       if (!isFacturaPendienteSaldoNoAzul(row)) continue;
-      if (row.observaciones?.trim()) continue;
       if (qNorm) {
         const nombre = normalizeSearchText(this.nombreClienteFromRow(row));
         const loc = normalizeSearchText(this.localidadFromRow(row));

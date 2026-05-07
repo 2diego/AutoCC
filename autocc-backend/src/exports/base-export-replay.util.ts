@@ -194,8 +194,44 @@ function buildSyntheticClientHeaderLine(rows: CcCurrent[]): string {
   return `Cliente :${first.clienteId} - ${first.tienda} - ${nombre};;;${loc}`;
 }
 
-const getClientSortLabelFromHeaderLine = (line: string): string => {
-  const normalized = line.replace(/\u2013|\u2014/g, '-');
+const normalizeHeaderDashes = (value: string): string =>
+  value
+    // Variantes del guión en CEOS exports (UTF-8/CP1252/mixed encodings).
+    .replace(/[\u2010-\u2015\u2212\u0096\uFFFD]/g, '-')
+    .replace(/â€“|â€”/g, '-');
+
+const getClientSortLabelFromHeaderLine = (
+  line: string,
+  erpSource: ErpSource,
+): string => {
+  const normalized = normalizeHeaderDashes(line);
+  if (erpSource === ErpSource.CEOS) {
+    const firstCell = splitBaseLine(normalized)[0] ?? normalized;
+    const header = firstCell.trim();
+    const strictLike = header.match(
+      /^cliente\s*:?\s*(\d{2,})\s*:?\s*-\s*(\d{1,2})(?:\s*-\s*|\s+)([^;]+)/i,
+    );
+    if (strictLike) {
+      return strictLike[3].trim();
+    }
+    const noClientePrefix = header.match(
+      /^(\d{2,})\s*:?\s*-\s*(\d{1,2})(?:\s*-\s*|\s+)([^;]+)/i,
+    );
+    if (noClientePrefix) {
+      return noClientePrefix[3].trim();
+    }
+    if (!/^cliente\b/i.test(header)) return '';
+    const withoutPrefix = header.replace(/^cliente\s*:?/i, '').trim();
+    const parts = withoutPrefix
+      .split(/\s+-\s+/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    if (parts.length >= 3) {
+      return parts.slice(2).join(' - ').split(';')[0].trim();
+    }
+    const fallback = withoutPrefix.match(/-\s*[^-]+-\s*([^;]+)/);
+    return fallback?.[1]?.trim() ?? '';
+  }
   const m = normalized.match(/cliente[^-]*-\s*\d+\s*-\s*([^;]+)/i);
   return m?.[1]?.trim() ?? '';
 };
@@ -488,7 +524,7 @@ export async function buildReplayWorkbook(
       if (result.clientKey) {
         baseHeaderSortLabelByClientKey.set(
           result.clientKey,
-          getClientSortLabelFromHeaderLine(line),
+          getClientSortLabelFromHeaderLine(line, erpSource),
         );
       }
       pushDataRow(

@@ -23,17 +23,6 @@ type Step =
   | 'debt_dias'
   | 'debt_doc'
 
-/** Solo UI: etiqueta del paso actual en el encabezado del chat. */
-const STEP_FLOW_LABEL: Record<Step, string> = {
-  menu: '',
-  pend_filter: 'Pendientes — buscar cliente',
-  pend_pick_client: 'Pendientes — elegir cliente',
-  pend_pick: 'Pendientes — elegir documento',
-  pend_obs: 'Pendientes — observación',
-  debt_dias: 'Deudas — días de atraso',
-  debt_doc: 'Deudas — observación',
-}
-
 const MENU_RESET_HINT =
   'Volviste al menú. Elegí otra opción con los botones de arriba o escribí 1–4.'
 
@@ -227,7 +216,7 @@ export function ChatPanel({ userName }: { userName: string }) {
       setPendErp(erp)
       if (list.length === 0) {
         pushBot(
-          'No hay comprobantes pendientes con esos criterios (recordá: solo facturas/ND con saldo pendiente y sin observación).',
+          'No hay comprobantes pendientes con esos criterios (solo facturas/ND con saldo pendiente).',
         )
         setStep('menu')
         return
@@ -532,17 +521,10 @@ export function ChatPanel({ userName }: { userName: string }) {
     pushBot('¿Cuántos días de atraso mínimo? (entero ≥ 0.)')
   }
 
-  const flowLabel = STEP_FLOW_LABEL[step]
-
   return (
     <section className={styles.wrap} aria-label="Chatbot AutoCC">
       <div className={styles.hero}>
         <h1 className={styles.title}>Consultas de cuenta corriente</h1>
-        {flowLabel ? (
-          <p className={styles.stepChip} role="status">
-            <span className={styles.stepChipText}>{flowLabel}</span>
-          </p>
-        ) : null}
         {step === 'menu' ? (
           <div className={styles.quickActions} role="group" aria-label="Opciones principales">
             <button
@@ -608,7 +590,7 @@ export function ChatPanel({ userName }: { userName: string }) {
         >
           <p className={styles.flowHint}>
             Usá el botón o enviá{' '}
-            <strong>0</strong> en el mensaje para volver al menú.
+            <strong>0</strong> para volver al menú.
           </p>
           <button
             type="button"
@@ -656,21 +638,6 @@ export function ChatPanel({ userName }: { userName: string }) {
         onSubmit={handleSubmit}
         aria-label="Entrada"
       >
-        <label className="fieldLabel" htmlFor="chat-input">
-          {step === 'menu'
-            ? 'Elige una opción para consultar (1 - 4):'
-            : step === 'pend_filter'
-              ? 'Ingresá el código de cliente o parte del nombre (obligatorio):'
-              : step === 'pend_pick_client'
-                ? 'Ingresá el número de ítem:'
-                : step === 'pend_pick'
-                  ? 'Ingresá el número de ítem:'
-                  : step === 'pend_obs' || step === 'debt_doc'
-                    ? 'Ingresá la observación:'
-                    : step === 'debt_dias'
-                      ? 'Ingresá la cantidad de días de atraso mínimo:'
-                      : 'Mensaje'}
-        </label>
         <div className={styles.composerRow}>
           <textarea
             id="chat-input"

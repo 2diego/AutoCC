@@ -248,7 +248,7 @@ const buildTotvsTypeFromToken = (token: string): string => {
 const normalizeTotvsDocumentNumber = (token: string): string => token.trim();
 const canonicalizeTotvsNumeroForKey = (numeroDocumento: string): string => {
   const t = numeroDocumento.trim().toUpperCase();
-  const m = t.match(/^([A-Z]\d{2}-)(\d+)$/);
+  const m = t.match(/^([A-Z]{1,2}\d{1,2}-)(\d+)$/);
   if (!m) return t;
   const [, prefix, digits] = m;
   const normalizedDigits = digits.replace(/^0+/, '') || '0';
@@ -273,7 +273,7 @@ export const canonicalizeCeosNumeroForKey = (
 };
 const hasAnyDigit = (value: string): boolean => /\d/.test(value);
 const isLikelyTotvsDocToken = (token: string): boolean =>
-  /^(REC[.\s-]*\d+|RA[.\s-]*\d+|NF[.\s-]*\S*\d+|NCE[.\s-]*\S*\d+|NCC[.\s-]*\S*\d+|YD1[.\s-]*\S*\d+|AC\d+-\S*\d+|AD\d+-\S*\d+|[A-Z]\d{2}-\S*\d+|D\s+\S*\d+)/i.test(
+  /^(REC[.\s-]*\d+|RA[.\s-]*\d+|NF[.\s-]*\S*\d+|NCE[.\s-]*\S*\d+|NCC[.\s-]*\S*\d+|YD1[.\s-]*\S*\d+|AC\d+-\S*\d+|AD\d+-\S*\d+|[A-Z]{1,2}\d{1,2}-\S*\d+|D\s+\S*\d+)/i.test(
     token.trim(),
   );
 
@@ -675,6 +675,10 @@ const parseTotvsIncremental = (content: string): ParseResult => {
     const inferredTipo = buildTotvsTypeFromToken(numeroDocumento);
     const tipoDocumento =
       inferredTipo !== 'NF' ? inferredTipo : tipoColumna.toUpperCase();
+    const normalizedNumeroDocumento =
+      tipoDocumento === 'RA'
+        ? numeroDocumento.replace(/^REC[.\s-]*/i, '').trim()
+        : normalizeTotvsDocumentNumber(numeroDocumento);
 
     const emisionCheck = checkExpectedDocumentDateField(
       fechaDocRaw,
@@ -710,7 +714,7 @@ const parseTotvsIncremental = (content: string): ParseResult => {
       clienteNombre: currentClientName || undefined,
       localidad: currentLocalidad || undefined,
       tipoDocumento: tipoDocumento.toUpperCase(),
-      numeroDocumento: numeroDocumento.toUpperCase(),
+      numeroDocumento: normalizedNumeroDocumento.toUpperCase(),
       fechaDoc: emisionCheck.date,
       valor: parseMoneyToDecimal(valorRaw),
       saldo: parseMoneyToDecimal(saldoRaw),
