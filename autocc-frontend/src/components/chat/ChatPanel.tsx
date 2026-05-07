@@ -286,6 +286,41 @@ export function ChatPanel({ userName }: { userName: string }) {
     }
   }
 
+  const advanceDebtFlow = (mode: 'next_doc' | 'next_client') => {
+    const currentGroup = debtGroups[debtGi]
+    if (!currentGroup) return
+
+    if (mode === 'next_doc') {
+      const nextDi = debtDi + 1
+      if (nextDi < currentGroup.documentos.length) {
+        setDebtDi(nextDi)
+        const next = currentGroup.documentos[nextDi]
+        pushBot(
+          `Siguiente documento (${nextDi + 1}/${currentGroup.documentos.length}) — ${formatClienteOneLine(currentGroup)}\n${formatDocLine(next, nextDi)}\n\nEscribí la observación. Si no querés observar este cliente, escribí S (o saltar).`,
+        )
+        return
+      }
+    }
+
+    const nextGi = debtGi + 1
+    if (nextGi < debtGroups.length) {
+      setDebtGi(nextGi)
+      setDebtDi(0)
+      const ng = debtGroups[nextGi]
+      const first = ng.documentos[0]
+      pushBot(
+        `Cliente siguiente (${nextGi + 1}/${debtGroups.length}):\n${formatClienteHeader(ng)}\n\n${formatDocLine(first, 0)}\n\nEscribí la observación para este documento. Si no querés observar este cliente, escribí S (o saltar).`,
+      )
+      return
+    }
+
+    pushBot('Listo: recorrimos todos los clientes con documentos que cumplían el criterio.')
+    setStep('menu')
+    setDebtGroups([])
+    setDebtGi(0)
+    setDebtDi(0)
+  }
+
   const applyDebtObs = async (text: string) => {
     if (!token) return
     const g = debtGroups[debtGi]
@@ -301,31 +336,7 @@ export function ChatPanel({ userName }: { userName: string }) {
         user?.id,
       )
       pushBot('Observación guardada.')
-      const nextDi = debtDi + 1
-      if (nextDi < g.documentos.length) {
-        setDebtDi(nextDi)
-        const next = g.documentos[nextDi]
-        pushBot(
-          `Siguiente documento (${nextDi + 1}/${g.documentos.length}) — ${formatClienteOneLine(g)}\n${formatDocLine(next, nextDi)}`,
-        )
-      } else {
-        const nextGi = debtGi + 1
-        if (nextGi < debtGroups.length) {
-          setDebtGi(nextGi)
-          setDebtDi(0)
-          const ng = debtGroups[nextGi]
-          const first = ng.documentos[0]
-          pushBot(
-            `Cliente siguiente (${nextGi + 1}/${debtGroups.length}):\n${formatClienteHeader(ng)}\n\n${formatDocLine(first, 0)}\n\nEscribí la observación para este documento.`,
-          )
-        } else {
-          pushBot(
-            'Listo: recorrimos todos los clientes con documentos que cumplían el criterio.',
-          )
-          setStep('menu')
-          setDebtGroups([])
-        }
-      }
+      advanceDebtFlow('next_doc')
     } catch (e) {
       pushBot(e instanceof Error ? e.message : 'Error al guardar.')
     } finally {
@@ -468,7 +479,7 @@ export function ChatPanel({ userName }: { userName: string }) {
         const g0 = clientes[0]
         const d0 = g0.documentos[0]
         pushBot(
-          `Se encontraron ${clientes.length} cliente(s). Empezamos por:\n\n${formatClienteHeader(g0)}\n\n${formatDocLine(d0, 0)} (${1}/${g0.documentos.length} docs. de este cliente)\n\nEscribí la observación.`,
+          `Se encontraron ${clientes.length} cliente(s). Empezamos por:\n\n${formatClienteHeader(g0)}\n\n${formatDocLine(d0, 0)} (${1}/${g0.documentos.length} docs. de este cliente)\n\nEscribí la observación. Si no querés observar este cliente, escribí S (o saltar).`,
         )
       } catch (err) {
         pushBot(err instanceof Error ? err.message : 'Error.')
@@ -480,6 +491,12 @@ export function ChatPanel({ userName }: { userName: string }) {
     }
 
     if (step === 'debt_doc') {
+      const cmd = raw.trim().toLowerCase()
+      if (cmd === 's' || cmd === 'saltar') {
+        pushBot('Cliente omitido. Continuamos con el siguiente.')
+        advanceDebtFlow('next_client')
+        return
+      }
       await applyDebtObs(raw)
       return
     }
@@ -487,7 +504,7 @@ export function ChatPanel({ userName }: { userName: string }) {
 
   const goMenu1 = () => {
     if (busy || step !== 'menu') return
-    pushUser('1')
+    pushUser('Facturas TOTVS pendientes por cliente')
     setStep('pend_filter')
     setPendErp('TOTVS')
     pushBot(
@@ -496,7 +513,7 @@ export function ChatPanel({ userName }: { userName: string }) {
   }
   const goMenu2 = () => {
     if (busy || step !== 'menu') return
-    pushUser('2')
+    pushUser('Remitos CEOS pendientes por cliente')
     setStep('pend_filter')
     setPendErp('CEOS')
     pushBot(
