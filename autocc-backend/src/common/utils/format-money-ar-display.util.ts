@@ -24,20 +24,34 @@ export function formatMoneyArDisplay(
 export function parseMoneyArStringToNumber(raw: string): number | null {
   const t = raw.trim().replace(/\s/g, '');
   if (!t) return null;
-  // Ya en forma AR: 1.076.622,32
-  if (/^-?\d{1,3}(\.\d{3})*,\d{1,4}$/.test(t)) {
-    const normalized = t.replace(/\./g, '').replace(',', '.');
-    const n = Number(normalized);
-    return Number.isFinite(n) ? n : null;
+
+  // Admitir solo signos/numéricos y separadores monetarios.
+  if (!/^-?[\d.,]+$/.test(t)) return null;
+
+  const sign = t.startsWith('-') ? '-' : '';
+  const unsigned = sign ? t.slice(1) : t;
+  if (!unsigned) return null;
+
+  const lastDot = unsigned.lastIndexOf('.');
+  const lastComma = unsigned.lastIndexOf(',');
+  const lastSep = Math.max(lastDot, lastComma);
+
+  let normalized = unsigned;
+  if (lastSep >= 0) {
+    const decDigits = unsigned.length - lastSep - 1;
+    const hasDecimalPart = decDigits >= 1 && decDigits <= 2;
+    if (hasDecimalPart) {
+      const intPart = unsigned.slice(0, lastSep).replace(/[.,]/g, '');
+      const decPart = unsigned.slice(lastSep + 1).replace(/[.,]/g, '');
+      if (!intPart && !decPart) return null;
+      normalized = `${intPart || '0'}.${decPart}`;
+    } else {
+      // Formatos tipo "2.030.400" o mixtos "1,050.000": tratar como miles.
+      normalized = unsigned.replace(/[.,]/g, '');
+    }
   }
-  // Entero AR solo con separadores de miles: 2.528.600 o 12.345.678 (sin ",xx")
-  if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) {
-    const normalized = t.replace(/\./g, '');
-    const n = Number(normalized);
-    return Number.isFinite(n) ? n : null;
-  }
-  // Desde MySQL / API: 1076622.32 o -430.65; o miles sin todos los puntos: 5567908,11
-  const n = Number(t.replace(',', '.'));
+
+  const n = Number(`${sign}${normalized}`);
   return Number.isFinite(n) ? n : null;
 }
 
