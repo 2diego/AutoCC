@@ -69,6 +69,42 @@ function assignCellStyleFromSnapshot(cell: Cell, snap: CellStyleBag): void {
   if (st.numFmt) cell.numFmt = st.numFmt;
 }
 
+function isNonEmptyStyle(snap: CellStyleBag | undefined): snap is CellStyleBag {
+  return Boolean(snap && Object.keys(snap).length > 0);
+}
+
+/** Evita que celdas `{}` del snapshot dejen M/N sin estilo; usa la última columna con estilo real. */
+function resolveRowStyleForColumn(
+  rowStyles: CellStyleBag[],
+  colIndex: number,
+): CellStyleBag | null {
+  if (colIndex < rowStyles.length && isNonEmptyStyle(rowStyles[colIndex])) {
+    return rowStyles[colIndex];
+  }
+  const upTo = Math.min(colIndex, rowStyles.length - 1);
+  for (let i = upTo; i >= 0; i -= 1) {
+    if (isNonEmptyStyle(rowStyles[i])) return rowStyles[i];
+  }
+  for (let i = rowStyles.length - 1; i >= 0; i -= 1) {
+    if (isNonEmptyStyle(rowStyles[i])) return rowStyles[i];
+  }
+  return null;
+}
+
+/** Columnas M y N (1-based) en filas de encabezado del layout base. */
+const EXCEL_HEADER_COL_M = 13;
+const EXCEL_HEADER_COL_N = 14;
+
+/** Filas Excel donde aplicar estilos de encabezado en M/N (layout distinto por ERP). */
+function headerLabelRowsFor(erpSource: ErpSource): readonly number[] {
+  return erpSource === ErpSource.CEOS ? [2, 3, 4] : [3, 4];
+}
+
+/** Fila del rótulo "Observaciones" en columna N. */
+function observacionesHeaderRowFor(erpSource: ErpSource): number {
+  return erpSource === ErpSource.CEOS ? 2 : 3;
+}
+
 /**
  * Primeras 4 filas del replay: mismos estilos que las plantillas SAMSENG (hoja CTA.CORRIENTE).
  */
@@ -91,11 +127,46 @@ export function applyReplayFirstFourRowStyles(
     if (rowStyles.length === 0) continue;
 
     for (let c = 0; c < maxCols; c++) {
-      const styleCol =
-        c < rowStyles.length ? rowStyles[c] : rowStyles[rowStyles.length - 1];
-      if (!styleCol || Object.keys(styleCol).length === 0) continue;
+      const styleCol = resolveRowStyleForColumn(rowStyles, c);
+      if (!styleCol) continue;
       assignCellStyleFromSnapshot(excelRow.getCell(c + 1), styleCol);
     }
+  }
+}
+
+/**
+ * Estilos en M/N en filas de encabezado; rótulo "Observaciones" en N2 (CEOS) o N3 (TOTVS).
+ */
+export function applyReplayExtendedHeaderColumnsMN(
+  ws: Worksheet,
+  erpSource: ErpSource,
+): void {
+  const block: HeaderBlock =
+    erpSource === ErpSource.CEOS
+      ? loadSnapshots().ceos
+      : loadSnapshots().totvs;
+
+  for (const rowNum of headerLabelRowsFor(erpSource)) {
+    const snapRow = block.rows[rowNum - 1] ?? [];
+    const excelRow = ws.getRow(rowNum);
+    for (const col of [EXCEL_HEADER_COL_M, EXCEL_HEADER_COL_N]) {
+      const style = resolveRowStyleForColumn(snapRow, col - 1);
+      if (style) {
+        assignCellStyleFromSnapshot(excelRow.getCell(col), style);
+      }
+    }
+  }
+
+  const obsRow = observacionesHeaderRowFor(erpSource);
+  const nObs = ws.getCell(obsRow, EXCEL_HEADER_COL_N);
+  nObs.value = 'Observaciones';
+  const snapObsRow = block.rows[obsRow - 1] ?? [];
+  const nObsStyle = resolveRowStyleForColumn(
+    snapObsRow,
+    EXCEL_HEADER_COL_N - 1,
+  );
+  if (nObsStyle) {
+    assignCellStyleFromSnapshot(nObs, nObsStyle);
   }
 }
 

@@ -5,14 +5,14 @@ Backend NestJS + TypeORM para AutoCC.
 ## Requisitos
 
 - Node `20.x`
-- npm
+- pnpm (recomendado: `corepack enable` para respetar `packageManager` del monorepo)
 - Base de datos según entorno:
   - desarrollo diario: MySQL
   - migraciones/produccion: Postgres (Neon)
 
 ## Convencion de archivos de entorno
 
-- `.env.development` -> uso diario local (`npm run start:dev`)
+- `.env.development` -> uso diario local (`pnpm run start:dev`)
 - `.env.migrations` -> comandos `migration:*` (TypeORM CLI)
 - `.env.example` -> guia
 - `*.example` se versiona; `.env.*` reales no se versionan
@@ -33,29 +33,29 @@ Copy-Item .env.migrations.example .env.migrations
 
 ## Comandos de uso diario
 
-Instalacion:
+Instalacion (en el monorepo AutoCC, desde la raiz del repositorio):
 
 ```bash
-npm install
+pnpm install
 ```
 
 Desarrollo local (usa `.env.development`):
 
 ```bash
-npm run start:dev
+pnpm run start:dev
 ```
 
 Build:
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 Tests:
 
 ```bash
-npm run test
-npm run test:e2e
+pnpm run test
+pnpm run test:e2e
 ```
 
 ## Flujo de migraciones (correcto para produccion)
@@ -65,31 +65,31 @@ Los comandos `migration:*` usan `.env.migrations` automaticamente.
 Ver estado:
 
 ```bash
-npm run migration:show
+pnpm run migration:show
 ```
 
 Generar migracion desde cambios en entidades:
 
 ```bash
-npm run migration:generate
+pnpm run migration:generate
 ```
 
 Crear migracion vacia/manual:
 
 ```bash
-npm run migration:create
+pnpm run migration:create
 ```
 
 Aplicar migraciones pendientes:
 
 ```bash
-npm run migration:run
+pnpm run migration:run
 ```
 
 Revertir ultima migracion:
 
 ```bash
-npm run migration:revert
+pnpm run migration:revert
 ```
 
 ## Practicas recomendadas
@@ -98,7 +98,7 @@ npm run migration:revert
 - Cambios de schema solo via migraciones versionadas
 - Revisar SQL de cada migracion antes de commit
 - En Render, usar `Release Command` con:
-  - `npm run migration:run`
+  - `pnpm run migration:run`
 - No guardar secretos reales en el repo
 
 ## Deploy (resumen)

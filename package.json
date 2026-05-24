@@ -1,0 +1,11 @@
+{
+  "name": "autocc",
+  "private": true,
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "start:dev": "pnpm --filter autocc-backend start:dev",
+    "dev": "pnpm --filter autocc-frontend dev",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint"
+  }
+}
