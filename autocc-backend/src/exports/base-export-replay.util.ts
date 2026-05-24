@@ -30,12 +30,16 @@ import {
 } from './excel-saldo-receipt-fill.util';
 import {
   applyClientHeaderRowBold,
+  applyReplayExtendedHeaderColumnsMN,
   applyReplayFirstFourRowStyles,
   applyReplayHeaderLayoutTweaks,
 } from './replay-excel-theming.util';
 import { isFacturaCanceladaSinAtrasoEnExport } from './document-saldo-color.util';
 
 const LINE_SPLIT_REGEX = /\r\n|\n|\r/;
+/** Replay hasta columna N (1-based): M = contenido del base; N = observaciones de la app. */
+const REPLAY_COLUMN_COUNT = 14;
+const REPLAY_COL_OBSERVACIONES_INDEX = 13;
 const EXCEL_COL_IMPORTE = 4;
 const EXCEL_COL_SALDO = 5;
 
@@ -103,29 +107,29 @@ function isBlankOrSeparatorLine(line: string): boolean {
   return cols.length > 0 && cols.every((c) => c.length === 0);
 }
 
-function appendObservacionesColumn(
-  rawLine: string,
-  observaciones: string | null,
-): string[] {
-  const parts = splitBaseLine(rawLine).map(sanitizeCellText);
-  while (parts.length < 13) {
-    parts.push('');
+function padReplayRow(parts: string[]): string[] {
+  const out = parts.map(sanitizeCellText);
+  while (out.length < REPLAY_COLUMN_COUNT) {
+    out.push('');
   }
-  // Columna M (1-based): índice 12.
-  parts[12] = sanitizeCellText(observaciones ?? '');
-  return parts;
+  if (out.length > REPLAY_COLUMN_COUNT) {
+    return out.slice(0, REPLAY_COLUMN_COUNT);
+  }
+  return out;
 }
 
-function appendObservacionesToCells(
+/** Fila del base (cabeceras, preámbulo, etc.): preserva M y solo rellena hasta N. */
+export function replayRowFromBaseLine(rawLine: string): string[] {
+  return padReplayRow(splitBaseLine(rawLine).map(sanitizeCellText));
+}
+
+/** Columna N (índice 13): observaciones; columna M se conserva del base o sintético. */
+export function applyObservacionesColumnN(
   parts: string[],
   observaciones: string | null,
 ): string[] {
-  const out = parts.map(sanitizeCellText);
-  while (out.length < 13) {
-    out.push('');
-  }
-  // Columna M (1-based): índice 12.
-  out[12] = sanitizeCellText(observaciones ?? '');
+  const out = padReplayRow(parts);
+  out[REPLAY_COL_OBSERVACIONES_INDEX] = sanitizeCellText(observaciones ?? '');
   return out;
 }
 
@@ -451,8 +455,8 @@ export async function buildReplayWorkbook(
     if (missing.length === 0) return;
 
     const injections = missing.map((r) =>
-      appendObservacionesColumn(
-        formatDocLineForExport(r),
+      applyObservacionesColumnN(
+        splitBaseLine(formatDocLineForExport(r)).map(sanitizeCellText),
         r.observaciones ?? null,
       ),
     );
@@ -528,7 +532,7 @@ export async function buildReplayWorkbook(
         );
       }
       pushDataRow(
-        appendObservacionesColumn(line, null),
+        replayRowFromBaseLine(line),
         null,
         true,
         result.clientKey ?? null,
@@ -544,7 +548,7 @@ export async function buildReplayWorkbook(
         return;
       }
       pushDataRow(
-        appendObservacionesToCells(
+        applyObservacionesColumnN(
           buildExportCellsFromCcRow(cc),
           cc.observaciones ?? null,
         ),
@@ -553,7 +557,7 @@ export async function buildReplayWorkbook(
       segmentAnchorIndex = dataRows.length - 1;
       return;
     }
-    pushDataRow(appendObservacionesColumn(line, null), null);
+    pushDataRow(replayRowFromBaseLine(line), null);
     if (result.kind === 'other' && !isBlankOrSeparatorLine(line)) {
       segmentAnchorIndex = dataRows.length - 1;
     }
@@ -594,14 +598,19 @@ export async function buildReplayWorkbook(
     const blockHeaderKeys: (string | null)[] = [];
 
     blockRows.push(
-      appendObservacionesColumn(buildSyntheticClientHeaderLine(rows), null),
+      replayRowFromBaseLine(buildSyntheticClientHeaderLine(rows)),
     );
     blockDocKeys.push(null);
     blockHeaderFlags.push(true);
     blockHeaderKeys.push(ck);
     for (const r of rows) {
       const line = formatDocLineForExport(r);
-      blockRows.push(appendObservacionesColumn(line, r.observaciones ?? null));
+      blockRows.push(
+        applyObservacionesColumnN(
+          splitBaseLine(line).map(sanitizeCellText),
+          r.observaciones ?? null,
+        ),
+      );
       blockDocKeys.push(buildCcRowDocKey(r));
       blockHeaderFlags.push(false);
       blockHeaderKeys.push(null);
@@ -639,10 +648,16 @@ export async function buildReplayWorkbook(
     );
   }
 
+  for (const r of dataRows) {
+    if (r.length > REPLAY_COLUMN_COUNT) {
+      r.length = REPLAY_COLUMN_COUNT;
+    }
+  }
   let maxCols = 0;
   for (const r of dataRows) {
     maxCols = Math.max(maxCols, r.length);
   }
+  maxCols = Math.min(maxCols, REPLAY_COLUMN_COUNT);
   for (const r of dataRows) {
     while (r.length < maxCols) {
       r.push('');
@@ -699,6 +714,7 @@ export async function buildReplayWorkbook(
 
   applyReplayFirstFourRowStyles(ws, erpSource, maxCols);
   applyReplayHeaderLayoutTweaks(ws, erpSource);
+  applyReplayExtendedHeaderColumnsMN(ws, erpSource);
   for (let i = 0; i < clientHeaderRowFlags.length; i++) {
     if (clientHeaderRowFlags[i]) {
       applyClientHeaderRowBold(ws, i + 1, maxCols);

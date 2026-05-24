@@ -20,11 +20,11 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "typeorm": "dotenv -e .env.migrations -- node ./node_modules/typeorm/cli.js",
     "typeorm:ds": "dotenv -e .env.migrations -- node ./node_modules/typeorm/cli.js -d dist/config/migrations-data-source.js",
-    "migration:generate": "npm run build && npm run typeorm:ds -- migration:generate src/migrations/AutoMigration",
-    "migration:create": "npm run build && npm run typeorm -- migration:create src/migrations/ManualMigration",
-    "migration:run": "npm run build && npm run typeorm:ds -- migration:run",
-    "migration:revert": "npm run build && npm run typeorm:ds -- migration:revert",
-    "migration:show": "npm run build && npm run typeorm:ds -- migration:show"
+    "migration:generate": "pnpm run build && pnpm run typeorm:ds -- migration:generate src/migrations/AutoMigration",
+    "migration:create": "pnpm run build && pnpm run typeorm -- migration:create src/migrations/ManualMigration",
+    "migration:run": "pnpm run build && pnpm run typeorm:ds -- migration:run",
+    "migration:revert": "pnpm run build && pnpm run typeorm:ds -- migration:revert",
+    "migration:show": "pnpm run build && pnpm run typeorm:ds -- migration:show"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
