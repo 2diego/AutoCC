@@ -108,6 +108,20 @@ describe('consolidation parser fixtures', () => {
     expect(result.documents[0].numeroDocumento).toBe('6A051716');
   });
 
+  it('parses CEOS ERP listado when mora is negative (documento no vencido)', () => {
+    const line =
+      '"44679 NICORA OCAMPO                 12 DE OCTUBRE 2416        SALADILLO        22/07/2026 06/08/2026     -9       F 6A052684       1,436,872.15"';
+    const result = parseErpListingForDocumentAdd(ErpSource.CEOS, line);
+
+    expect(result.documents).toHaveLength(1);
+    expect(result.documents[0].clienteId).toBe('44679');
+    expect(result.documents[0].tipoDocumento).toBe('F');
+    expect(result.documents[0].numeroDocumento).toBe('6A052684');
+    expect(result.documents[0].fechaDoc?.toISOString().slice(0, 10)).toBe(
+      '2026-07-22',
+    );
+  });
+
   it('unifies CEOS document keys when base omits a leading zero in numero', () => {
     expect(
       buildDocumentKeyFromParts(ErpSource.CEOS, '30294', '01', 'F', '6A51713'),
