@@ -438,9 +438,9 @@ const parseCeosIncremental = (content: string): ParseResult => {
     const trimmed = line.replace(/^"+|"+$/g, '').trim();
     if (!trimmed) return;
 
-    /** Listados "NV": entre mora y tipo suele aparecer columna origen (p. ej. `-`). Saldo puede llevar ` *`. */
+    /** Listados "NV": mora puede ser negativa (aún no vencido); entre mora y tipo suele aparecer origen (p. ej. `-`). Saldo puede llevar ` *`. */
     const tailMatch = trimmed.match(
-      /(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+\d+(?:\s+-\s+)?\s+([FCDR])\s+([A-Z0-9.-]+)\s+(-?[\d.,]+)\s*\*?\s*$/i,
+      /(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+-?\d+(?:\s+-\s+)?\s+([FCDR])\s+([A-Z0-9.-]+)\s+(-?[\d.,]+)\s*\*?\s*$/i,
     );
     if (!tailMatch) return;
 
