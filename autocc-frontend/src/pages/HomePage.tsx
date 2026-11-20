@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
 import { ChatPanel } from '../components/chat/ChatPanel'
 import { ConsolidationSheet } from '../features/consolidation/ConsolidationSheet'
+import { RendicionCcSheet } from '../features/rendicion-cc/RendicionCcSheet'
 import { SettingsSheet } from '../features/settings/SettingsSheet'
 import { useAuth } from '../context/useAuth'
 import styles from './HomePage.module.css'
@@ -12,6 +13,7 @@ export function HomePage() {
   const navigate = useNavigate()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [consolidationOpen, setConsolidationOpen] = useState(false)
+  const [rendicionCcOpen, setRendicionCcOpen] = useState(false)
 
   const displayName = user?.name?.trim() || user?.email || 'Usuario'
 
@@ -26,6 +28,7 @@ export function HomePage() {
         userName={displayName}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenConsolidation={() => setConsolidationOpen(true)}
+        onOpenRendicionCc={() => setRendicionCcOpen(true)}
         onLogout={handleLogout}
       >
         <div className={styles.page}>
@@ -41,6 +44,10 @@ export function HomePage() {
       <ConsolidationSheet
         open={consolidationOpen}
         onClose={() => setConsolidationOpen(false)}
+      />
+      <RendicionCcSheet
+        open={rendicionCcOpen}
+        onClose={() => setRendicionCcOpen(false)}
       />
     </>
   )

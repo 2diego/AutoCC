@@ -112,6 +112,24 @@ export type FullConsolidationFromErpResponse = {
   }>
 }
 
+export type FacturasSamsengResponse = {
+  erpSource: ErpSource
+  stats: {
+    baseDocs: number
+    facturasDocs: number
+    matchedDocs: number
+    updatedRows: number
+  }
+  previewMatched: Array<{
+    comprobante: string
+    observaciones: string
+    paymentColor: 'azul' | 'rojo' | null
+  }>
+  fileName: string
+  fileBase64: string
+  mimeType: string
+}
+
 export type RemoveDocumentsFromErpResponse = {
   consolidationId: number
   erpSource: ErpSource
