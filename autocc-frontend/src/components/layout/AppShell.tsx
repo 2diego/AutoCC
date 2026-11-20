@@ -6,6 +6,7 @@ type AppShellProps = {
   children: ReactNode
   onOpenSettings: () => void
   onOpenConsolidation: () => void
+  onOpenRendicionCc: () => void
   onLogout: () => void
 }
 
@@ -14,6 +15,7 @@ export function AppShell({
   children,
   onOpenSettings,
   onOpenConsolidation,
+  onOpenRendicionCc,
   onLogout,
 }: AppShellProps) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -30,6 +32,11 @@ export function AppShell({
     closeMenu()
   }
 
+  const openRendicionCc = () => {
+    onOpenRendicionCc()
+    closeMenu()
+  }
+
   return (
     <div className={styles.shell}>
       <header className={styles.topBar}>
@@ -43,6 +50,9 @@ export function AppShell({
         <nav className={styles.navDesktop} aria-label="Principal">
           <button type="button" className={styles.navBtn} onClick={openConsolidation}>
             Consolidación
+          </button>
+          <button type="button" className={styles.navBtn} onClick={openRendicionCc}>
+            Rendición CC
           </button>
           <button type="button" className={styles.navBtn} onClick={openSettings}>
             Ajustes
@@ -81,6 +91,13 @@ export function AppShell({
             onClick={openConsolidation}
           >
             Consolidación
+          </button>
+          <button
+            type="button"
+            className={styles.mobileLink}
+            onClick={openRendicionCc}
+          >
+            Rendición CC
           </button>
           <button
             type="button"

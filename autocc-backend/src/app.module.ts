@@ -11,6 +11,7 @@ import { CcBackupModule } from './cc-backup/cc-backup.module';
 import { ConsolidationErrorsModule } from './consolidation-errors/consolidation-errors.module';
 import { DocumentNotesAuditModule } from './document-notes-audit/document-notes-audit.module';
 import { ExportsModule } from './exports/exports.module';
+import { RendicionCcModule } from './rendicion-cc/rendicion-cc.module';
 import { AuthModule } from './auth/auth.module';
 import { RolesGuard } from './common/auth/roles.guard';
 import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
@@ -26,6 +27,7 @@ import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
     ConsolidationErrorsModule,
     DocumentNotesAuditModule,
     ExportsModule,
+    RendicionCcModule,
   ],
   controllers: [AppController],
   providers: [
